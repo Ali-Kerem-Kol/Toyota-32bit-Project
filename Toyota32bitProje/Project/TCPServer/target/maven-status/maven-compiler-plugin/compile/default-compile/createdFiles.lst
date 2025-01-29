@@ -1,0 +1,5 @@
+com\mydomain\DataPublisher.class
+com\mydomain\ConfigReader.class
+com\mydomain\CurrencySimulator.class
+com\mydomain\TCPServer$ClientHandler.class
+com\mydomain\TCPServer.class
