@@ -14,6 +14,7 @@ public class DataPublisher {
 
         double usdTryRate = config.getInitialRate("PF1_USDTRY");
         double eurUsdRate = config.getInitialRate("PF1_EURUSD");
+        double gbpUsdRate = config.getInitialRate("PF1_GBPUSD");
 
         for (TCPServer.ClientHandler client : clients) {
             PrintWriter out = client.getWriter();
@@ -28,6 +29,10 @@ public class DataPublisher {
                         eurUsdRate = CurrencySimulator.simulateExchangeRate(eurUsdRate);
                         message = String.format("PF1_EURUSD|22:number:%.6f|25:number:%.6f|5:timestamp:%s",
                                 eurUsdRate, eurUsdRate + 1, new Date());
+                    } else if (pair.equals("PF1_GBPUSD")) {
+                        gbpUsdRate = CurrencySimulator.simulateExchangeRate(gbpUsdRate);
+                        message = String.format("PF1_GBPUSD|22:number:%.6f|25:number:%.6f|5:timestamp:%s",
+                                gbpUsdRate, gbpUsdRate + 1, new Date());
                     }
 
                     if (!message.isEmpty()) {
