@@ -113,7 +113,7 @@ public class TCPServer {
         }
 
         private boolean isValidCurrencyPair(String pair) {
-            return pair.equals("PF1_USDTRY") || pair.equals("PF1_EURUSD");
+            return pair.equals("PF1_USDTRY") || pair.equals("PF1_EURUSD") || pair.equals("PF1_GBPUSD");
         }
 
         public PrintWriter getWriter() {
