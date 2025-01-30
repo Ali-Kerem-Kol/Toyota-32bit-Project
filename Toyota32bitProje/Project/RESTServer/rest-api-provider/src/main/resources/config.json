@@ -1,0 +1,9 @@
+{
+  "initialRates": {
+    "PF2_USDTRY": 34.50,
+    "PF2_EURUSD": 1.08,
+    "PF2_GBPUSD": 1.25
+  },
+  "publishFrequency": 5000,
+  "publishCount": 10
+}
