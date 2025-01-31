@@ -18,8 +18,14 @@ public class ConfigReader {
         }
     }
 
+    // Başlangıç kur değerini döndürür
     public double getInitialRate(String rateName) {
         return config.getJSONObject("initialRates").optDouble(rateName, -1);
+    }
+
+    // API key varsa döndürür, yoksa null döner
+    public String getApiKey() {
+        return config.optString("apiKey", null);
     }
 
     public int getPublishFrequency() {
