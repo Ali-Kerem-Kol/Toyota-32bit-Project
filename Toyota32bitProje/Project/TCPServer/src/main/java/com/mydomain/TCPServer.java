@@ -6,7 +6,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class TCPServer {
-    private static final int PORT = 8081;
+    private static final int PORT = 5000;
     private static final Set<String> subscribedPairs = Collections.synchronizedSet(new HashSet<>());
     private static final List<ClientHandler> clients = Collections.synchronizedList(new ArrayList<>()); // Bağlı istemcileri takip et
     private static final ExecutorService executorService = Executors.newFixedThreadPool(10);
