@@ -2,7 +2,9 @@ package com.mydomain.rest_api_provider.controller;
 
 import com.mydomain.rest_api_provider.config.ConfigReader;
 import com.mydomain.rest_api_provider.simulation.CurrencySimulator;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -21,23 +23,31 @@ public class ExchangeRateController {
     }
 
     @GetMapping("/{rateName}")
-    public Map<String, Object> getExchangeRate(@PathVariable String rateName) {
-        // LinkedHashMap kullanarak sıralamayı koruyoruz
-        Map<String, Object> response = new LinkedHashMap<>();
+    public Map<String, Object> getExchangeRate(
+            @PathVariable String rateName,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        // API Key doğrulaması
+        String apiKey = configReader.getApiKey();
+        if (apiKey != null && (authHeader == null || !authHeader.equals("Bearer " + apiKey))) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized request");
+        }
+
         double initialRate = configReader.getInitialRate(rateName);
 
         if (initialRate == -1) {
-            response.put("error", "Rate data not found for " + rateName);
-        } else {
-            double bid = currencySimulator.simulateExchangeRate(initialRate);
-            double ask = bid + 0.99; // Spread ekleyerek ask fiyatını oluşturuyoruz
-
-            // Bid önce, Ask sonra ekleniyor
-            response.put("rateName", rateName);
-            response.put("bid", bid);  // Bid önce ekleniyor
-            response.put("ask", ask);  // Ask sonra ekleniyor
-            response.put("timestamp", Instant.now().toString());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Rate data not found for " + rateName);
         }
+
+        double bid = currencySimulator.simulateExchangeRate(initialRate);
+        double ask = bid + 0.99;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("rateName", rateName);
+        response.put("bid", bid);
+        response.put("ask", ask);
+        response.put("timestamp", Instant.now().toString());
+
         return response;
     }
 }
