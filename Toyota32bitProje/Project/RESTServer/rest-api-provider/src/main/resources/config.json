@@ -1,4 +1,5 @@
 {
+  "apiKey": "your-api-key-here",
   "initialRates": {
     "PF2_USDTRY": 34.50,
     "PF2_EURUSD": 1.08,
