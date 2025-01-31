@@ -6,7 +6,6 @@ public class CurrencySimulator {
     private static final Random random = new Random();
 
     public static double simulateExchangeRate(double initialRate) {
-        // Döviz kuru için %1'lik bir değişim aralığı
         double changePercent = (random.nextDouble() * 0.02) - 0.01; // -1% ile +1% arasında değişim
         return initialRate * (1 + changePercent);
     }
