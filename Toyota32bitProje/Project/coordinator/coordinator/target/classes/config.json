@@ -1,0 +1,10 @@
+{
+  "tcpServer": {
+    "host": "localhost",
+    "port": 5000
+  },
+  "restApi": {
+    "url": "http://localhost:8081/api/rates",
+    "apiKey": "your-api-key-here"
+  }
+}
