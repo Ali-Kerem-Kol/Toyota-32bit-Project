@@ -1,0 +1,58 @@
+# ==============================
+# Maven build outputs ve JAR/WAR
+# ==============================
+# Herhangi bir alt klasörde target/ varsa yok say
+**/target/
+# Derlenmiş jar/war dosyaları
+*.jar
+*.war
+
+# ==============================
+# IDE Ayar Dosyaları
+# ==============================
+# IntelliJ IDEA
+/.idea/
+/*.iml
+*.iws
+*.ipr
+
+# Eclipse
+/.classpath
+/.project
+/.settings/
+
+# VS Code
+/.vscode/
+
+# ==============================
+# Docker ve Compose
+# ==============================
+# Local Docker konteyner log dizinleri
+**/logs/
+/docker-compose.override.yml
+
+# ==============================
+# Log Dosyaları ve Geçici Dosyalar
+# ==============================
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
+# ==============================
+# Maven Wrapper
+# ==============================
+/.mvn/
+/mvnw
+/mvnw.cmd
+
+# ==============================
+# OS ve Diğer
+# ==============================
+# Windows Thumbs
+Thumbs.db
+# macOS metadata
+.DS_Store
+# Komut satırı geçici
+*~

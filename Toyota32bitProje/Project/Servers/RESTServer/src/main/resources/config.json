@@ -1,0 +1,10 @@
+{
+  "apiKey": "8f5d3c9a-94b0-49d4-87e9-12a5c13e6c7a",
+  "initialRates": {
+    "PF2_USDTRY": 34.50,
+    "PF2_EURUSD": 1.08,
+    "PF2_GBPUSD": 1.25
+  },
+  "publishFrequency": 5000,
+  "publishCount": 10
+}

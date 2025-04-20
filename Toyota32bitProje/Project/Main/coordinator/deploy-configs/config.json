@@ -1,0 +1,43 @@
+{
+  "kafka": {
+    "bootstrapServers": "kafka:9092",
+    "topicName": "rates-topic",
+    "acks": "all",
+    "retries": 3
+  },
+  "redis": {
+    "host": "redis",
+    "port": 6379,
+    "database": 0,
+    "password": ""
+  },
+  "providers": [
+    {
+      "className": "com.mydomain.main.provider.TCPProvider",
+      "platformName": "TCP_PLATFORM",
+      "host": "tcp-server",
+      "port": "5000",
+      "subscribeRates": [
+        "PF1_USDTRY",
+        "PF1_EURUSD",
+        "PF1_GBPUSD"
+      ]
+    },
+    {
+      "className": "com.mydomain.main.provider.RESTProvider",
+      "platformName": "REST_PLATFORM",
+      "restApiUrl": "http://rest-server:8081/api/rates",
+      "apiKey": "8f5d3c9a-94b0-49d4-87e9-12a5c13e6c7a",
+      "pollInterval": "5",
+      "subscribeRates": [
+        "PF2_USDTRY",
+        "PF2_EURUSD",
+        "PF2_GBPUSD"
+      ]
+    }
+  ],
+  "calculation": {
+    "calculationMethod": "javascript",
+    "formulaFilePath": "/app/scripts/Formula.js"
+  }
+}

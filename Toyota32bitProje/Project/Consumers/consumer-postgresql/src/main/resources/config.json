@@ -1,0 +1,6 @@
+{
+  "bootstrapServers": "kafka:9092",
+  "topicName": "rates-topic",
+  "groupId": "ratesConsumerGroup",
+  "autoOffsetReset": "latest"
+}

@@ -1,0 +1,197 @@
+version: '3.9'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "sh", "-c", "exec 3<>/dev/tcp/localhost/2181 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "2181:2181"
+    networks:
+      - app-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.1
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "9092:9092"
+    networks:
+      - app-network
+
+  postgres-db:
+    image: postgres:14
+    container_name: postgres-db
+    environment:
+      POSTGRES_DB: exchange_rates
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8083:80"
+    networks:
+      - app-network
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  tcp-server:
+    build:
+      context: ./Servers/TCPServer
+      dockerfile: Dockerfile
+    container_name: tcp-server
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    networks:
+      - app-network
+
+  rest-server:
+    build:
+      context: ./Servers/RESTServer
+      dockerfile: Dockerfile
+    container_name: rest-server
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    networks:
+      - app-network
+
+  coordinator:
+    build:
+      context: ./Main/coordinator
+      dockerfile: Dockerfile
+    container_name: coordinator-app
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    volumes:
+      - ./Main/coordinator/logs:/app/coordinator/logs
+    networks:
+      - app-network
+
+  consumer-postgresql:
+    build:
+      context: ./Consumers/consumer-postgresql
+      dockerfile: Dockerfile
+    container_name: consumer-postgresql
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    networks:
+      - app-network
+
+  ####################################################################
+  #       Elasticsearch + Kibana + Filebeat (Security enabled)        #
+  ####################################################################
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.7.1
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false         # Güvenliği kapatıyoruz (kolay kurulum)
+      - xpack.security.audit.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m      # Hafıza küçük tutuyoruz (geliştirme)
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-s", "http://localhost:9200/_cat/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.7.1
+    container_name: kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      # Security kapalı olduğu için kullanıcı/şifreye gerek yok
+    ports:
+      - "5601:5601"
+    networks:
+      - app-network
+
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.7.1
+    container_name: filebeat
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      # 1) coordinator log klasörünü read-only mount ediyoruz
+      - ./Main/coordinator/logs:/app/Main/coordinator/logs:ro
+      
+      # 2) Filebeat konfig dosyasını container içine kopyalıyoruz
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      
+    environment:
+      # Windows izin problemi varsa:
+      - BEAT_STRICT_PERMS=false
+    networks:
+      - app-network
+
+
+networks:
+  app-network:
+    driver: bridge

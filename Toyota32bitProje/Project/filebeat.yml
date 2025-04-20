@@ -1,0 +1,18 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /app/Main/coordinator/logs/*.log
+    # Eğer multiline veya özel parsing yoksa, bu kadarı yeterli
+    # Örnek ek processor:
+    processors:
+      - add_host_metadata: ~
+
+setup.kibana:
+  host: "kibana:5601"
+
+# ILM kapatabilirsin basit dev ortamında:
+setup.ilm.enabled: false
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
