@@ -34,17 +34,19 @@ Her modülde:
 cd <modül-dizini>
 mvn clean package
 java -jar target/*.jar
-TCPServer: port 5000
+- TCPServer: port 5000
 
-RESTServer: port 8081
+- RESTServer: port 8081
 
-Coordinator: Redis → Kafka
+- Coordinator: Redis → Kafka
 
-Consumer‑PostgreSQL: Kafka → PostgreSQL
+- Consumer‑PostgreSQL: Kafka → PostgreSQL
+```
 
-Docker Compose ile Tam Entegrasyon
-
-docker-compose up --```
+###Docker Compose ile Tam Entegrasyon
+```bash
+docker-compose up --build
+```
 Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consumer, Elasticsearch, Kibana, Filebeat hepsi bir arada.
 
 ##Bileşenler
@@ -112,20 +114,24 @@ Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consume
 
 ```bash
 telnet localhost 5000
-subscribe|PF1_EURUSD```
+subscribe|PF1_EURUSD
+```
 - REST API ile veri çekmek
 
 ```bash
 curl -H "Authorization: Bearer 8f5d3c9a-94b0-49d4-87e9-12a5c13e6c7a" \
-     http://localhost:8081/api/rates/PF2_USDTRY```
+     http://localhost:8081/api/rates/PF2_USDTRY
+	 ```
 - Kibana’da log izlemek
 ```bash
-Tarayıcıda http://localhost:5601 → Discover → index .ds-filebeat-* seç```
+Tarayıcıda http://localhost:5601
+```
 
 -PostgreSQL’de sonuçları görmek
 
 ```bash
-psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates;"```
+psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates;"
+```
 ##İletişim
 - Proje Sahibi: Ali Kerem Kol
 
