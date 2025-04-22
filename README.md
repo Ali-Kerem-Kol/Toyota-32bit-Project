@@ -6,8 +6,7 @@ Bu proje, birden fazla finansal veri sağlayıcıdan (TCP simülatörü, REST AP
 2. Türev hesaplamaları (USDTRY, EURTRY, GBPTRY) yapıp Redis’e (`calculated:` prefix’li)  
 3. Hesaplanan verileri Kafka’ya yayınlayıp  
 4. Spring‑Boot tabanlı bir consumer ile PostgreSQL’e kalıcı olarak yazmayı  
-5. Filebeat→Elasticsearch→Kibana hattıyla logları izlemeyi  
-sağlar.
+5. Filebeat→Elasticsearch→Kibana hattıyla logları izlemeyi sağlar.
 
 ---
 
@@ -44,102 +43,94 @@ Coordinator: Redis → Kafka
 Consumer‑PostgreSQL: Kafka → PostgreSQL
 
 Docker Compose ile Tam Entegrasyon
-bash
-Kopyala
-Düzenle
-docker-compose up --build
+
+docker-compose up --```
 Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consumer, Elasticsearch, Kibana, Filebeat hepsi bir arada.
 
-Bileşenler
-TCP Simülatör
-Telnet publish/subscribe
+##Bileşenler
+###TCP Simülatör
+- Telnet publish/subscribe
 
-subscribe|RATE_NAME, unsubscribe|RATE_NAME
+- subscribe|RATE_NAME, unsubscribe|RATE_NAME
 
-ConfigReader ile initialRates, publishFrequency, publishCount
+- ConfigReader ile initialRates, publishFrequency, publishCount
 
-REST API Simülatör
-Spring Boot, /api/rates/{rateName}
+###REST API Simülatör
+- Spring Boot, /api/rates/{rateName}
 
-Authorization: Bearer <apiKey>
+- Authorization: Bearer <apiKey>
 
-Coordinator (Ana Uygulama)
-Dinamik provider yükleme (reflection)
+###Coordinator (Ana Uygulama)
+- Dinamik provider yükleme (reflection)
 
-Redis’e raw & calculated veriler
+- Redis’e raw & calculated veriler
 
-RateCalculatorService + DynamicFormulaService (JS engine)
+- RateCalculatorService + DynamicFormulaService (JS engine)
 
-KafkaProducerService ile Kafka’ya yayın
+- KafkaProducerService ile Kafka’ya yayın
 
-Kafka Producer
-Asenkron edilir, eksikse yeniden init
+###Kafka Producer
+- Asenkron edilir, eksikse yeniden init
 
-sendCalculatedRatesToKafka(...)
+- sendCalculatedRatesToKafka(...)
 
-Redis Service
-Jedis, auto‑reconnect monitor
+###Redis Service
+- Jedis, auto‑reconnect monitor
 
-putRawRate / getRawRate
+- putRawRate / getRawRate
 
-putCalculatedRate / getCalculatedRate
+- putCalculatedRate / getCalculatedRate
 
-Rate Calculator
-calculateUsdTry, calculateEurTry, calculateGbpTry
+###Rate Calculator
+- calculateUsdTry, calculateEurTry, calculateGbpTry
 
-Formüller JS dosyasında
+- Formüller JS dosyasında
 
-Kafka Consumer (PostgreSQL)
-Spring Kafka listener → RatesRepository ile tbl_rates tablosuna kayıt
+###Kafka Consumer (PostgreSQL)
+- Spring Kafka listener → RatesRepository ile tbl_rates tablosuna kayıt
 
-Filebeat → Elasticsearch → Kibana
-filebeat.yml ile Coordinator log’larını index’ler
+###Filebeat → Elasticsearch → Kibana
+- filebeat.yml ile Coordinator log’larını index’ler
 
-Kibana Discover ile canlı log
+- Kibana Discover ile canlı log
 
-Konfigürasyon Dosyaları
-Servers/TCPServer/src/.../config.json
+##Konfigürasyon Dosyaları
+- Servers/TCPServer/src/.../config.json
 
-Servers/RESTServer/src/.../config.json
+- Servers/RESTServer/src/.../config.json
 
-Main/coordinator/src/.../config.json
+- Main/coordinator/src/.../config.json
 
-Consumers/consumer-postgresql/src/.../config.json
+- Consumers/consumer-postgresql/src/.../config.json
 
-filebeat.yml
+- filebeat.yml
 
-docker-compose.yml
+- docker-compose.yml
 
-Kullanım Örnekleri
-Telnet ile abone olmak
+##Kullanım Örnekleri
+- Telnet ile abone olmak
 
-bash
-Kopyala
-Düzenle
+```bash
 telnet localhost 5000
-subscribe|PF1_EURUSD
-REST API ile veri çekmek
+subscribe|PF1_EURUSD```
+- REST API ile veri çekmek
 
-bash
-Kopyala
-Düzenle
+```bash
 curl -H "Authorization: Bearer 8f5d3c9a-94b0-49d4-87e9-12a5c13e6c7a" \
-     http://localhost:8081/api/rates/PF2_USDTRY
-Kibana’da log izlemek
+     http://localhost:8081/api/rates/PF2_USDTRY```
+- Kibana’da log izlemek
+```bash
+Tarayıcıda http://localhost:5601 → Discover → index .ds-filebeat-* seç```
 
-Tarayıcıda http://localhost:5601 → Discover → index .ds-filebeat-* seç
+-PostgreSQL’de sonuçları görmek
 
-PostgreSQL’de sonuçları görmek
+```bash
+psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates;"```
+##İletişim
+- Proje Sahibi: Ali Kerem Kol
 
-sql
-Kopyala
-Düzenle
-psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates ORDER BY id DESC LIMIT 10;"
-İletişim
-Proje Sahibi: Ali Kerem Kol
+- E‑posta: ali.kol@example.com
 
-E‑posta: ali.kol@example.com
-
-GitHub: https://github.com/yourusername/finance-stream
+- GitHub: https://github.com/yourusername/finance-stream
 
 Teşekkürler!
