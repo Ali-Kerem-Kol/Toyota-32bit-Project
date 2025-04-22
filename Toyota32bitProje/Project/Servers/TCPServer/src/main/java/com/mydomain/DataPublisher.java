@@ -9,9 +9,21 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
+/**
+ * DataPublisher sınıfı, TCP ile bağlanan tüm istemcilere
+ * abone oldukları döviz kurları için simülasyon verisi yayınlamaktan sorumludur.
+ */
 public class DataPublisher {
     private static final Random random = new Random();
 
+    /**
+     * Abone çiftleri üzerinden döviz kuru simülasyonu yapar ve her bir
+     * istemciye ilgili mesajı gönderir.
+     *
+     * @param subscribedPairs Abone olunan döviz kuru sembollerini içeren küme
+     * @param clients        TCPServerApplication üzerinden elde edilen istemci yöneticileri
+     * @param config         Yapılandırma dosyasından okunan başlangıç değerleri içeren nesne
+     */
     public static void publishData(Set<String> subscribedPairs,
                                    List<TCPServerApplication.ClientHandler> clients,
                                    ConfigReader config) {

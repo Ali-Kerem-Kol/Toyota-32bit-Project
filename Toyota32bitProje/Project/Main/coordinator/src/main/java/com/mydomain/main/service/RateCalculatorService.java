@@ -10,14 +10,22 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * RateCalculator => Tüm hesaplamaları 'DynamicFormulaEngine' ile JS tarafında yapar.
- * Dokümandaki formüller myFormula.js içinde yer alıyor.
+ * Kur hesaplamalarını yapan servis
+ * Redis'ten gelen ham kurları alır
+ * DynamicFormulaService aracılığıyla JavaScript ile tanımlı formülleri uygular
+ * Hesaplanan kurları Redis'e kaydeder ve geriye döner
  */
 public class RateCalculatorService {
 
     private static final Logger logger = LogManager.getLogger(RateCalculatorService.class);
 
-
+    /**
+     * RedisService üzerindeki raw: ön ekli kurları alır
+     * USDTRY, EURTRY, GBPTRY hesaplamalarını yapar
+     * Hesaplanan kurları calculated: ön ekli olarak Redis'e kaydeder
+     * @param redis RedisService örneği
+     * @return hesaplanan kurların adıyla eşleşen Rate nesneleri
+     */
     public Map<String, Rate> calculateRates(RedisService redis) {
         Map<String, Rate> rates = new HashMap<>();
         try {
@@ -74,8 +82,10 @@ public class RateCalculatorService {
 
 
     /**
-     * USDTRY =>
-     *   doc: (pf1UsdTry.bid + pf2UsdTry.bid)/2, (pf1UsdTry.ask + pf2UsdTry.ask)/2
+     * İki ham USDTRY kuru kullanarak ortalama bid ve ask değerini hesaplar
+     * @param pf1UsdTry platform 1 USDTRY Rate nesnesi
+     * @param pf2UsdTry platform 2 USDTRY Rate nesnesi
+     * @return hesaplanan USDTRY Rate nesnesi
      */
     public Rate calculateUsdTry(Rate pf1UsdTry, Rate pf2UsdTry) {
         Map<String, Object> ctx = new HashMap<>();
@@ -101,11 +111,12 @@ public class RateCalculatorService {
     }
 
     /**
-     * EURTRY =>
-     *   doc:
-     *     usdMid = ((pf1UsdTry.bid+pf2UsdTry.bid)/2 + (pf1UsdTry.ask+pf2UsdTry.ask)/2 ) / 2
-     *     EURTRY.bid = usdMid * avg(EURUSD.bid)
-     *     ...
+     * Ham USDTRY ve EURUSD kurları kullanarak EURTRY bid/ask hesaplamasını yapar
+     * @param pf1UsdTry platform 1 USDTRY Rate nesnesi
+     * @param pf2UsdTry platform 2 USDTRY Rate nesnesi
+     * @param pf1EurUsd platform 1 EURUSD Rate nesnesi
+     * @param pf2EurUsd platform 2 EURUSD Rate nesnesi
+     * @return hesaplanan EURTRY Rate nesnesi
      */
     public Rate calculateEurTry(Rate pf1UsdTry, Rate pf2UsdTry, Rate pf1EurUsd, Rate pf2EurUsd) {
         Map<String, Object> ctx = new HashMap<>();
@@ -135,10 +146,12 @@ public class RateCalculatorService {
     }
 
     /**
-     * GBPTRY =>
-     *   doc:
-     *     usdMid = ...
-     *     GBPTRY.bid = usdMid * avg(GBPUSD.bid)
+     * Ham USDTRY ve GBPUSD kurları kullanarak GBPTRY bid/ask hesaplamasını yapar
+     * @param pf1UsdTry platform 1 USDTRY Rate nesnesi
+     * @param pf2UsdTry platform 2 USDTRY Rate nesnesi
+     * @param pf1GbpUsd platform 1 GBPUSD Rate nesnesi
+     * @param pf2GbpUsd platform 2 GBPUSD Rate nesnesi
+     * @return hesaplanan GBPTRY Rate nesnesi
      */
     public Rate calculateGbpTry(Rate pf1UsdTry, Rate pf2UsdTry, Rate pf1GbpUsd, Rate pf2GbpUsd) {
         Map<String, Object> ctx = new HashMap<>();

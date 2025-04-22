@@ -15,7 +15,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Kafka consumer ayarlarını parametreye göre set ediyoruz.
+ * Kafka tüketici (consumer) yapılandırmasını sağlar.
+ * Bu sınıf, Spring Kafka ile mesajları dinlemek için gereken
+ * ConsumerFactory ve ConcurrentKafkaListenerContainerFactory
+ * bean'lerini tanımlar.
  */
 @Configuration
 @EnableKafka
@@ -23,6 +26,13 @@ public class AppConfig {
 
     private static final Logger logger = LogManager.getLogger(AppConfig.class);
 
+    /**
+     * Kafka ConsumerFactory bean'i oluşturur.
+     * Bootstrap sunucuları, grup kimliği ve offset reset stratejisi
+     * config.json'dan okunarak ayarlanır.
+     *
+     * @return ConsumerFactory<String, String> Kafka tüketici fabrikası
+     */
     @Bean
     public ConsumerFactory<String, String> consumerFactory() {
         String bootstrapServers = ConfigReader.getKafkaBootstrapServers();
@@ -43,6 +53,13 @@ public class AppConfig {
         return new DefaultKafkaConsumerFactory<>(props);
     }
 
+    /**
+     * KafkaListenerContainerFactory bean'i oluşturur.
+     * Bu factory, @KafkaListener ile işaretlenmiş yöntemlerin
+     * arka planda çoklu iş parçacıklı dinleme yapmasını sağlar.
+     *
+     * @return ConcurrentKafkaListenerContainerFactory<String, String> Kafka dinleme konteyner fabrikası
+     */
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
         ConcurrentKafkaListenerContainerFactory<String, String> factory =

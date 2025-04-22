@@ -1,38 +1,52 @@
 package com.mydomain.main.provider;
 
 import com.mydomain.main.coordinator.ICoordinator;
-
 import java.util.Map;
 
 /**
- * <p>Provider interface defines the minimum required methods:
- * connect, disconnect, subscribe, unsubscribe for a data provider
- * (TCPProvider, RESTProvider, etc.).</p>
+ * Sağlayıcı (Provider) arabirimi, veri platformlarına bağlanma,
+ * bağlantı kesme, abonelik ve abonelikten çıkma işlemleri ile
+ * koordinatör referansını ayarlamak için gereken temel metotları tanımlar.
  */
 public interface IProvider {
 
     /**
-     * Alternative connect method using a map of params (e.g. host, port, apiKey).
+     * Belirtilen platform adına ve parametrelere göre bağlantı kurar.
+     *
+     * @param platformName Bağlanılacak platformun adı (örneğin "TCP_PLATFORM")
+     * @param params       Bağlantı için gerekli parametrelerin key-value yapısı
      */
     void connect(String platformName, Map<String, String> params);
 
     /**
-     * Disconnect from the platform.
+     * Belirtilen platform adına ve parametrelere göre bağlantıyı keser.
+     *
+     * @param platformName Bağlantısı kesilecek platformun adı
+     * @param params       Bağlantıyı kesmek için gerekli parametrelerin key-value yapısı
      */
     void disConnect(String platformName, Map<String, String> params);
 
     /**
-     * Subscribe to a specific rate.
+     * Belirtilen platformda bir kura (rate) abone olur.
+     *
+     * @param platformName Abonelik yapılacak platformun adı
+     * @param rateName     Abone olunacak kurun adı (örneğin "PF1_USDTRY")
      */
     void subscribe(String platformName, String rateName);
 
     /**
-     * Unsubscribe from a specific rate.
+     * Belirtilen platformda bir kura (rate) abonelikten çıkar.
+     *
+     * @param platformName Abonelikten çıkılacak platformun adı
+     * @param rateName     Aboneliği sonlandırılacak kurun adı
      */
     void unSubscribe(String platformName, String rateName);
 
     /**
-     * Coordinator reference assignment.
+     * Bu sağlayıcının koordinatör arayüzünü alır.
+     * Sağlayıcı, veri geldiğinde veya durum değiştiğinde koordinatöre bildirim yapar.
+     *
+     * @param coordinator Uygulamanın koordinatör nesnesi
      */
     void setCoordinator(ICoordinator coordinator);
 

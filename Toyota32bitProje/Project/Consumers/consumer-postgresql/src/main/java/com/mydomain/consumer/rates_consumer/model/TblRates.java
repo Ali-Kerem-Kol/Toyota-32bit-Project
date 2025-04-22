@@ -3,6 +3,11 @@ package com.mydomain.consumer.rates_consumer.model;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+/**
+ * TblRates sınıfı, veritabanındaki tbl_rates tablosuna karşılık gelen JPA entity'sidir.
+ * Bu sınıf, tüketici uygulaması tarafından alınan döviz kuru mesajlarının
+ * veritabanına kaydedilmesi amacıyla kullanılır.
+ */
 @Entity
 @Table(name = "tbl_rates")
 public class TblRates {

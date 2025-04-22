@@ -5,6 +5,11 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
 
+/**
+ * TCPServerApplication sınıfı, TCP tabanlı bir sunucu başlatarak
+ * istemcilerden abonelik komutları alır ve DataPublisher aracılığıyla
+ * abone olunan döviz kurlarını istemcilere yayınlar.
+ */
 public class TCPServerApplication {
     private static final int PORT = 5000;
     private static final Set<String> subscribedPairs = Collections.synchronizedSet(new HashSet<>());
@@ -12,13 +17,21 @@ public class TCPServerApplication {
     private static final ExecutorService executorService = Executors.newFixedThreadPool(10);
     private static volatile boolean serverRunning = true;
 
+    /**
+     * Uygulamanın giriş noktası. Belirtilen portta bir ServerSocket oluşturur,
+     * istemcilerden bağlantıları kabul eder ve her bağlantı için yeni bir ClientHandler
+     * thread'i başlatır. Aynı zamanda veri yayınlama iş parçacığını tetikler.
+     *
+     * @param args Program argümanları (kullanılmıyor)
+     */
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("TCP Server started. Port: " + PORT);
 
-            // Veri yayın thread'ini başlat
+            // Veri yayın iş parçacığını başlat
             startDataPublisher();
 
+            // Bağlantı kabul döngüsü
             while (serverRunning) {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("New client connected: " + clientSocket.getInetAddress());
@@ -31,6 +44,10 @@ public class TCPServerApplication {
         }
     }
 
+    /**
+     * DataPublisher'ı belirli aralıklarla çalıştıran daemon thread'i başlatır.
+     * Yayın frekansını ConfigReader üzerinden alır.
+     */
     private static void startDataPublisher() {
         ConfigReader config = new ConfigReader("src/main/java/resources/config.json");
         new Thread(() -> {
@@ -45,19 +62,37 @@ public class TCPServerApplication {
         }).start();
     }
 
+    /**
+     * Mevcut abone olunan döviz çiftlerini döner.
+     *
+     * @return Abone çiftlerini içeren Set
+     */
     public static Set<String> getSubscribedPairs() {
         return subscribedPairs;
     }
 
+    /**
+     * ClientHandler sınıfı, her bir istemci bağlantısını ayrı bir thread üzerinde
+     * yönetir. Gelen komutları işler ve istemciye yanıt döner.
+     */
     static class ClientHandler extends Thread {
         private Socket socket;
         private PrintWriter out;
         private boolean quitRequested = false;
 
+        /**
+         * Yeni bir ClientHandler örneği oluşturur.
+         *
+         * @param socket İstemci ile iletişim kurmak için kullanılan Socket nesnesi
+         */
         public ClientHandler(Socket socket) {
             this.socket = socket;
         }
 
+        /**
+         * Thread çalıştırıldığında komut girişlerini okur, "quit" komutu ile bağlantıyı sonlandırır
+         * veya handleCommand metodunu çağırarak abone/abonelik iptal işlemlerini gerçekleştirir.
+         */
         @Override
         public void run() {
             try (
@@ -91,6 +126,13 @@ public class TCPServerApplication {
             }
         }
 
+        /**
+         * İstemciden gelen komutu kontrol eder ve "subscribe" veya "unsubscribe" işlemlerini yapar.
+         * Geçersiz istek formatı veya bulunmayan döviz çifti için hata mesajı döner.
+         *
+         * @param input Gelen komut satırı
+         * @param out   PrintWriter ile istemciye yanıt gönderme nesnesi
+         */
         private void handleCommand(String input, PrintWriter out) {
             if (input.startsWith("subscribe|")) {
                 String pair = input.split("\\|")[1];
@@ -112,10 +154,21 @@ public class TCPServerApplication {
             }
         }
 
+        /**
+         * Geçerli döviz çiftleri listesinde olup olmadığını kontrol eder.
+         *
+         * @param pair Kontrol edilecek döviz çifti
+         * @return Eğer çift geçerliyse true, değilse false
+         */
         private boolean isValidCurrencyPair(String pair) {
             return pair.equals("PF1_USDTRY") || pair.equals("PF1_EURUSD") || pair.equals("PF1_GBPUSD");
         }
 
+        /**
+         * Bu istemciye veri gönderiminde kullanılan PrintWriter nesnesini döner.
+         *
+         * @return PrintWriter ile istemciye veri yazma nesnesi
+         */
         public PrintWriter getWriter() {
             return out;
         }

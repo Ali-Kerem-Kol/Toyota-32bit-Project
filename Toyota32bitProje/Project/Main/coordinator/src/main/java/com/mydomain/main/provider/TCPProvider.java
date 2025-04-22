@@ -20,6 +20,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * TCPProvider sınıfı TCP sunucusuna bağlanarak gelen verileri dinler,
+ * parse eder ve Coordinator üzerinden uygulamanın geri kalanına iletir.
+ */
 public class TCPProvider implements IProvider {
 
     private static final Logger logger = LogManager.getLogger(TCPProvider.class);
@@ -33,20 +37,26 @@ public class TCPProvider implements IProvider {
     private BufferedReader reader;
     private OutputStream writer;
 
-    // Bağlantı durumunu takip eder.
     private volatile boolean running = false;
     private volatile boolean autoReconnect = true;
 
     private final Set<String> subscriptions = Collections.synchronizedSet(new HashSet<>());
 
     public TCPProvider() {
-        // Reflection kullanımı için
+        // Reflection kullanımı için boş yapıcı
     }
 
+    /**
+     * TCP sunucusuna bağlanır ve veri dinleme iş parçacığını başlatır.
+     * Bağlantı başarılıysa Coordinator'a bilgi gönderir.
+     *
+     * @param platformName Platformun adı
+     * @param params       Bağlantı parametreleri (host, port)
+     */
     @Override
     public void connect(String platformName, Map<String, String> params) {
         this.platformName = platformName;
-        autoReconnect = true; // Bağlantı girişimlerinde otomatik yeniden bağlanma aktif
+        autoReconnect = true;
 
         if (params.containsKey("host")) {
             this.host = params.get("host");
@@ -61,7 +71,6 @@ public class TCPProvider implements IProvider {
             reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             writer = socket.getOutputStream();
             running = true;
-            // Bağlantı başarılı olduğunda
             if (coordinator != null) {
                 coordinator.onConnect(platformName, true);
             }
@@ -70,7 +79,6 @@ public class TCPProvider implements IProvider {
         } catch (Exception e) {
             logger.error("❌ TCP connect error => {}", e.getMessage());
             running = false;
-            // Bağlantı kurulamadıysa abonelikteki tüm rate'lerin durumunu güncelle
             updateRateStatusForAll(false);
             if (autoReconnect) {
                 reconnect();
@@ -78,9 +86,16 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Mevcut TCP bağlantısını kapatır, yeniden bağlanmayı durdurur
+     * ve Coordinator'a bağlantı kesildi bildiriminde bulunur.
+     *
+     * @param platformName Platform adı
+     * @param params       Kullanılmayan parametreler
+     */
     @Override
     public void disConnect(String platformName, Map<String, String> params) {
-        autoReconnect = false; // Manuel disconnect durumunda yeniden bağlanmayı kapat
+        autoReconnect = false;
         running = false;
         try {
             if (socket != null && !socket.isClosed()) {
@@ -95,6 +110,13 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Belirtilen kur için sunucuya subscribe komutu gönderir
+     * ve local abonelik listesine ekler.
+     *
+     * @param platformName Platform adı
+     * @param rateName     Abone olunacak kur adı
+     */
     @Override
     public void subscribe(String platformName, String rateName) {
         try {
@@ -111,6 +133,13 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Belirtilen kur için sunucuya unsubscribe komutu gönderir
+     * ve local abonelik listeden çıkarır.
+     *
+     * @param platformName Platform adı
+     * @param rateName     Abonelikten çıkarılacak kur adı
+     */
     @Override
     public void unSubscribe(String platformName, String rateName) {
         try {
@@ -128,11 +157,19 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Coordinator referansını atar. Sağlayıcı bu referans üzerinden callback yapar.
+     *
+     * @param coordinator Uygulama koordinatörü
+     */
     @Override
     public void setCoordinator(ICoordinator coordinator) {
         this.coordinator = coordinator;
     }
 
+    /**
+     * Gelen TCP verilerini sürekli okuyan ve parse edip callback yapan iş parçacığını başlatır.
+     */
     private void listenForData() {
         new Thread(() -> {
             while (running) {
@@ -149,7 +186,6 @@ public class TCPProvider implements IProvider {
                     break;
                 }
             }
-            // Bağlantı kesildiğinde yeniden bağlanmayı dene ve durum güncellemesi yap
             if (autoReconnect) {
                 updateRateStatusForAll(false);
                 logger.info("Connection lost. Attempting to reconnect...");
@@ -158,6 +194,9 @@ public class TCPProvider implements IProvider {
         }, "TcpProviderListener-" + platformName).start();
     }
 
+    /**
+     * Bağlantı koptuğunda tekrar bağlanmayı deneyen döngüyü çalıştırır.
+     */
     private void reconnect() {
         running = false;
         try {
@@ -178,17 +217,15 @@ public class TCPProvider implements IProvider {
                 if (coordinator != null) {
                     coordinator.onConnect(platformName, true);
                 }
-                // Abone olunan rate'lar için yeniden abone ol
                 for (String rateName : subscriptions) {
                     subscribe(platformName, rateName);
                 }
-                // Bağlantı yeniden sağlandığında tüm rate'lerin durumunu true yap
                 updateRateStatusForAll(true);
                 listenForData();
             } catch (Exception e) {
                 logger.error("Reconnect attempt failed: {}", e.getMessage());
                 try {
-                    Thread.sleep(5000); // 5 saniye bekle
+                    Thread.sleep(5000);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     break;
@@ -197,17 +234,25 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Local abonelik listesindeki her kur için status bilgisini Coordinator'a günceller.
+     *
+     * @param value Bağlantı aktifse true, pasifse false
+     */
     private void updateRateStatusForAll(boolean value) {
-        // Abonelikteki tüm rate'ler için RateStatus bilgisini güncelle
         for (String rateName : subscriptions) {
             if (coordinator != null) {
-                // Eğer bağlantı aktif değilse, isActive ve isUpdated false; aktifse true
                 RateStatus status = new RateStatus(value, value);
                 coordinator.onRateStatus(platformName, rateName, status);
             }
         }
     }
 
+    /**
+     * Gelen satırı parse edip Rate nesnesine dönüştürür ve Coordinator'a callback yapar.
+     *
+     * @param line TCP üzerinden gelen ham mesaj
+     */
     private void parseAndCallback(String line) {
         if (!line.contains("|")) {
             logger.debug("Possibly a control message => {}", line);
@@ -224,7 +269,6 @@ public class TCPProvider implements IProvider {
         long ts = parseTimestampSegment(parts[3]);
 
         RateFields fields = new RateFields(bid, ask, ts);
-        // Yeni rate oluşturulurken varsayılan olarak bağlantının aktif olduğunu kabul ediyoruz.
         RateStatus status = new RateStatus(true, true);
         Rate rate = new Rate(rateName, fields, status);
 
@@ -234,11 +278,23 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * "22:number:34.123" formatındaki segmentten sayısal değeri çeker.
+     *
+     * @param seg Parçalanacak segment
+     * @return Ayrıştırılan double değer
+     */
     private double parseNumberSegment(String seg) {
         String[] sub = seg.split(":", 3);
         return Double.parseDouble(sub[2]);
     }
 
+    /**
+     * "5:timestamp:2025-04-22T15:06:16.306Z" formatındaki segmentten zamanı milisaniye cinsinden çeker.
+     *
+     * @param seg Parçalanacak segment
+     * @return Epoch milisaniye değeri
+     */
     private long parseTimestampSegment(String seg) {
         String[] sub = seg.split(":", 3);
         String dateStr = sub[2];

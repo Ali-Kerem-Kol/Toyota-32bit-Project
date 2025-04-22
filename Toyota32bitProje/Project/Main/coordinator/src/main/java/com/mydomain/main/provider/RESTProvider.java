@@ -47,6 +47,13 @@ public class RESTProvider implements IProvider {
         // Reflection ile çağrılacak
     }
 
+    /**
+     * Sağlayıcıyı başlatır. restApiUrl, apiKey ve pollInterval parametrelerini alır,
+     * HTTP servisini oluşturur ve polling iş parçacığını başlatır.
+     *
+     * @param platformName Platform adı
+     * @param params       Bağlantı parametreleri (restApiUrl, apiKey, pollInterval)
+     */
     @Override
     public void connect(String platformName, Map<String, String> params) {
         this.platformName = platformName;
@@ -80,6 +87,13 @@ public class RESTProvider implements IProvider {
         startPollingThread();
     }
 
+    /**
+     * REST sağlayıcı bağlantısını sonlandırır. Polling iş parçacığını durdurur,
+     * koordinatöre bağlantı kesildi bilgisini gönderir ve tüm abonelikleri pasif duruma getirir.
+     *
+     * @param platformName Platform adı
+     * @param params       Kullanılmayan parametreler
+     */
     @Override
     public void disConnect(String platformName, Map<String, String> params) {
         logger.info("✅ Disconnected from REST => {}", platformName);
@@ -94,18 +108,35 @@ public class RESTProvider implements IProvider {
         updateRateStatusForAll(false);
     }
 
+    /**
+     * Belirtilen kur için abonelik ekler. subscribedRates listesine ekleme yapar.
+     *
+     * @param platformName Platform adı
+     * @param rateName     Abone olunacak kur adı
+     */
     @Override
     public void subscribe(String platformName, String rateName) {
         subscribedRates.add(rateName);
         logger.info("RESTProvider => Subscribed to {} on {}", rateName, platformName);
     }
 
+    /**
+     * Belirtilen kur aboneliğini kaldırır. subscribedRates listesinden silme yapar.
+     *
+     * @param platformName Platform adı
+     * @param rateName     Abonelikten çıkarılacak kur adı
+     */
     @Override
     public void unSubscribe(String platformName, String rateName) {
         subscribedRates.remove(rateName);
         logger.info("RESTProvider => Unsubscribed from {} on {}", rateName, platformName);
     }
 
+    /**
+     * Koordinatör nesnesini ayarlar. Sağlayıcı bu koordinatöre olay bildirimleri yapar.
+     *
+     * @param coordinator Uygulamanın koordinatörü
+     */
     @Override
     public void setCoordinator(ICoordinator coordinator) {
         this.coordinator = coordinator;
@@ -157,6 +188,9 @@ public class RESTProvider implements IProvider {
 
     /**
      * Test eder: belirtilen rate üzerinden sunucu erişilebilir mi?
+     *
+     * @param rateName Test edilecek kur adı
+     * @return Sunucuya erişilebiliyorsa true, aksi halde false
      */
     private boolean testServerAvailable(String rateName) {
         try {
@@ -175,12 +209,13 @@ public class RESTProvider implements IProvider {
     }
 
     /**
-     * Tüm subscribed rate'ler için, bağlantı durumuna göre RateStatus günceller.
+     * Tüm subscribed rate'ler için bağlantı durumuna göre RateStatus günceller.
+     *
+     * @param active Bağlantı etkinse true, değilse false
      */
     private void updateRateStatusForAll(boolean active) {
         for (String rateName : subscribedRates) {
             if (coordinator != null) {
-                // Eğer sunucu erişilemezse, isActive ve isUpdated false; erişilebilirse true
                 RateStatus status = new RateStatus(active, active);
                 coordinator.onRateStatus(platformName, rateName, status);
             }
@@ -188,7 +223,11 @@ public class RESTProvider implements IProvider {
     }
 
     /**
-     * Belirtilen rateName için REST sunucusundan veri çekip, Coordinator'a callback yapar.
+     * Belirtilen rateName için REST sunucusundan veri çeker,
+     * JSON verisini Rate nesnesine dönüştürür ve koordinatöre bildirir.
+     *
+     * @param rateName Çekilecek kur adı
+     * @return Oluşturulan Rate nesnesi veya hata durumunda null
      */
     private Rate fetchRateInternal(String rateName) {
         try {
@@ -206,7 +245,6 @@ public class RESTProvider implements IProvider {
             String isoTime = root.path("timestamp").asText(Instant.now().toString());
 
             RateFields fields = new RateFields(bid, ask, isoTime);
-            // Varsayılan olarak sunucu erişilebilirse yeni rate için status true kabul ediyoruz.
             RateStatus status = new RateStatus(true, true);
             Rate rate = new Rate(rName, fields, status);
 

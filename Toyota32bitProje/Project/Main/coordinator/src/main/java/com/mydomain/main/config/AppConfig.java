@@ -22,52 +22,67 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * AppConfig is responsible for initializing the main Coordinator,
- * Kafka Producer, and dynamically loading Providers based on config.json.
+ * Uygulamanın ana bileşenlerini başlatan konfigürasyon sınıfı.
+ * <p>
+ * Bu sınıf; Redis servisi, Rate hesaplayıcı servisi ve Kafka üretici servisini
+ * oluşturur, ardından config.json'daki sağlayıcı tanımlarına göre
+ * IProvider implementasyonlarını dinamik olarak yükleyip başlatır.
+ * </p>
  */
 public class AppConfig {
 
     private static final Logger logger = LogManager.getLogger(AppConfig.class);
 
+    /**
+     * Uygulamanın koordinatörünü başlatır ve döner.
+     * <p>
+     * - KafkaProducerService oluşturur<br>
+     * - RedisService oluşturur<br>
+     * - RateCalculatorService oluşturur<br>
+     * - Coordinator nesnesini bu bileşenlerle inşa eder<br>
+     * - config.json'daki provider tanımlarını okuyup her biri için ayrı bir thread başlatır
+     * </p>
+     *
+     * @return Başlatılmış ICoordinator örneği
+     */
     public static ICoordinator init() {
         logger.info("=== AppConfig init started ===");
 
         // Kafka producer oluşturuluyor.
         KafkaProducerService kafkaProducerService = createKafkaProducer();
 
-        // Redis ayarlarını config.json'dan okuyarak RedisCacheManager örneğini oluşturuyoruz.
+        // Redis ayarlarını config.json'dan okuyarak RedisService örneğini oluşturuyoruz.
         String redisHost = ConfigReader.getRedisHost();
         int redisPort = ConfigReader.getRedisPort();
-        // İstersek database ve password da eklenebilir, burada temel haliyle oluşturuluyor.
         RedisService redisService = new RedisService(redisHost, redisPort);
 
+        // Rate hesaplayıcı servisi
         RateCalculatorService rateCalculatorService = new RateCalculatorService();
 
-        // Coordinator, Kafka producer ve RedisCacheManager ile oluşturuluyor.
-        Coordinator coordinator = new Coordinator(redisService,rateCalculatorService, kafkaProducerService);
+        // Coordinator oluşturuluyor
+        Coordinator coordinator = new Coordinator(redisService, rateCalculatorService, kafkaProducerService);
 
-        // Provider bilgileri config.json'dan okunuyor.
+        // config.json'daki provider tanımlarını yükle
         JSONArray providersArray = ConfigReader.getProviders();
         List<Thread> providerThreads = new ArrayList<>();
 
-        // Her provider için ayrı bir thread oluşturuluyor.
         for (int i = 0; i < providersArray.length(); i++) {
             JSONObject providerObj = providersArray.getJSONObject(i);
             Thread t = new Thread(() -> {
                 String className = providerObj.getString("className");
                 logger.info("Loading provider => {}", className);
 
-                // 1) Provider Reflection: Provider instance oluşturuluyor.
+                // 1) Reflection ile provider örneği oluştur
                 IProvider provider = instantiateProvider(className);
 
-                // 2) Coordinator referansı set ediliyor.
+                // 2) Coordinator referansı set et
                 setCoordinatorMethod(provider, className, coordinator);
 
-                // 3) Param map oluşturuluyor.
+                // 3) Parametre haritasını oluştur
                 Map<String, String> paramMap = buildParamMap(providerObj);
                 String platformName = providerObj.optString("platformName", className);
 
-                // 4) Provider bağlantısı deneniyor.
+                // 4) Provider.connect çağrısı
                 try {
                     provider.connect(platformName, paramMap);
                 } catch (ProviderConnectionException ce) {
@@ -77,7 +92,7 @@ public class AppConfig {
                     logger.error("Generic error connecting provider {} => {}", className, e.getMessage(), e);
                 }
 
-                // 5) Subscribe işlemleri yapılıyor.
+                // 5) Abonelikleri işle
                 subscribeRatesIfPresent(provider, providerObj, className);
             });
             t.setName("ProviderThread-" + i);
@@ -88,6 +103,15 @@ public class AppConfig {
         return coordinator;
     }
 
+    /**
+     * KafkaProducerService örneğini oluşturur.
+     * <p>
+     * bootstrap sunucularını ConfigReader üzerinden alır.
+     * </p>
+     *
+     * @return Oluşturulmuş KafkaProducerService
+     * @throws KafkaPublishingException Kafka üretici oluşturulamıyorsa
+     */
     private static KafkaProducerService createKafkaProducer() {
         try {
             String bootstrap = ConfigReader.getKafkaBootstrapServers();
@@ -98,6 +122,13 @@ public class AppConfig {
         }
     }
 
+    /**
+     * Sağlayıcı sınıfını reflection ile örnekler.
+     *
+     * @param className Tam nitelikli sınıf adı
+     * @return IProvider örneği
+     * @throws ProviderInitializationException Örneklendirme başarısızsa
+     */
     private static IProvider instantiateProvider(String className) {
         try {
             Class<?> clazz = Class.forName(className);
@@ -108,6 +139,14 @@ public class AppConfig {
         }
     }
 
+    /**
+     * Sağlayıcıya Coordinator örneğini set eden yöntem.
+     *
+     * @param provider    Yüklenen provider örneği
+     * @param className   Sağlayıcı sınıfının adı (log için)
+     * @param coordinator Coordinator örneği
+     * @throws ProviderInitializationException Coordinator set edilemezse
+     */
     private static void setCoordinatorMethod(IProvider provider, String className, ICoordinator coordinator) {
         try {
             Method setCoord = provider.getClass().getMethod("setCoordinator", ICoordinator.class);
@@ -120,6 +159,12 @@ public class AppConfig {
         }
     }
 
+    /**
+     * JSON objesinden sınıfa parametre haritası oluşturur.
+     *
+     * @param providerObj Provider tanımı içeren JSONObject
+     * @return Key-value çiftlerinden oluşan parametre haritası
+     */
     private static Map<String, String> buildParamMap(JSONObject providerObj) {
         Map<String, String> paramMap = new HashMap<>();
         for (String key : providerObj.keySet()) {
@@ -130,6 +175,13 @@ public class AppConfig {
         return paramMap;
     }
 
+    /**
+     * Eğer providerObj içinde "subscribeRates" varsa, bu rate'lere abone olur.
+     *
+     * @param provider    IProvider örneği
+     * @param providerObj Provider tanımı içeren JSONObject
+     * @param className   Sağlayıcı sınıfının adı (log için)
+     */
     private static void subscribeRatesIfPresent(IProvider provider, JSONObject providerObj, String className) {
         if (!providerObj.has("subscribeRates")) {
             return;

@@ -7,10 +7,16 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.InputStream;
 
+/**
+ * config.json dosyasını okuyarak tüketici uygulaması için
+ * gerekli ayarları sağlayan yardımcı sınıf.
+ * Yüklenen ayarlar statik blokta okunur ve JsonNode içinde saklanır.
+ */
 public class ConfigReader {
 
     private static final Logger logger = LogManager.getLogger(ConfigReader.class);
 
+    /** config.json içeriğini tutan JsonNode nesnesi */
     private static JsonNode config;
 
     static {
@@ -30,18 +36,39 @@ public class ConfigReader {
         }
     }
 
+    /**
+     * Kafka broker adreslerini döner.
+     *
+     * @return bootstrapServers - Kafka bootstrap sunucuları
+     */
     public static String getKafkaBootstrapServers() {
         return config.get("bootstrapServers").asText();
     }
 
+    /**
+     * Dinlenecek Kafka topic adını döner.
+     *
+     * @return topicName - Kafka topic adı
+     */
     public static String getTopicName() {
         return config.get("topicName").asText();
     }
 
+    /**
+     * Consumer grup kimliğini döner.
+     *
+     * @return groupId - Kafka consumer grup kimliği
+     */
     public static String getGroupId() {
         return config.get("groupId").asText();
     }
 
+    /**
+     * Offset sıfırlama stratejisini döner.
+     * "latest" veya "earliest" gibi değerler içerir.
+     *
+     * @return autoOffsetReset - offset reset stratejisi
+     */
     public static String getAutoOffsetReset() {
         return config.get("autoOffsetReset").asText();
     }

@@ -1,6 +1,5 @@
 package com.mydomain.consumer.rates_consumer.service;
 
-import com.mydomain.consumer.rates_consumer.config.ConfigReader;
 import com.mydomain.consumer.rates_consumer.model.TblRates;
 import com.mydomain.consumer.rates_consumer.repository.RatesRepository;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -15,17 +14,24 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * RateConsumerService => "rates-topic" mesajlarını dinliyor
- * ve DB'ye kaydediyor.
+ * KafkaConsumerService sınıfı, belirtilen Kafka topicinden gelen
+ * döviz kuru mesajlarını dinler ve işleyerek veritabanına kaydeder.
  */
 @Service
-public class RateConsumerService {
+public class KafkaConsumerService {
 
-    private static final Logger logger = LogManager.getLogger(RateConsumerService.class);
+    private static final Logger logger = LogManager.getLogger(KafkaConsumerService.class);
 
     @Autowired
     private RatesRepository ratesRepository;
 
+    /**
+     * KafkaListener metodu. Gelen mesajı okur, doğru formatta olup olmadığını kontrol eder,
+     * parçalar (rateName, bid, ask, timestamp) ve TblRates entity'sine dönüştürerek
+     * veritabanına kaydeder.
+     *
+     * @param record Kafka'dan gelen mesaj kaydı (partition, offset ve değer içerir)
+     */
     @KafkaListener(topics = "#{T(com.mydomain.consumer.rates_consumer.config.ConfigReader).getTopicName()}")
     public void consumeRateMessage(ConsumerRecord<String, String> record) {
         String message = record.value();
@@ -65,4 +71,5 @@ public class RateConsumerService {
             logger.error("Error processing message => {}, error={}", message, e.getMessage(), e);
         }
     }
+
 }

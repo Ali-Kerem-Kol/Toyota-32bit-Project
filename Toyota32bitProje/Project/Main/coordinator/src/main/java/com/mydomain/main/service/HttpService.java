@@ -10,8 +10,9 @@ import java.net.*;
 import java.util.Base64;
 
 /**
- * HttpService: HTTP isteklerini yönetir.
- * Bu versiyonda "maxRetries" kaldırılarak GET isteği tek seferde denenir.
+ * HttpService sınıfı, RESTProvider tarafından kullanılmak üzere
+ * HTTP GET isteklerini yönetir. Tek seferlik deneme yapar ve
+ * başarısızlık durumunda exception fırlatır.
  */
 public class HttpService {
 
@@ -27,7 +28,14 @@ public class HttpService {
     private final Proxy proxy;
 
     /**
-     * maxRetries parametresi kaldırıldı.
+     * HttpService örneğini oluşturur.
+     *
+     * @param apiKey       Bearer token kullanımı için API anahtarı
+     * @param basicUser    Basic Auth kullanıcı adı
+     * @param basicPass    Basic Auth şifresi
+     * @param useBearer    Bearer token ile yetkilendirme kullanılsın mı
+     * @param useBasic     Basic Auth kullanılsın mı
+     * @param proxy        HTTP istekleri için proxy (null ise doğrudan bağlanır)
      */
     public HttpService(String apiKey, String basicUser, String basicPass,
                        boolean useBearer, boolean useBasic, Proxy proxy) {
@@ -40,7 +48,12 @@ public class HttpService {
     }
 
     /**
-     * Tek deneme – başarısız olursa exception fırlatır.
+     * Belirtilen URL'e tek seferlik GET isteği gönderir.
+     * HTTP durum kodu 2xx aralığında değilse RuntimeException fırlatır.
+     *
+     * @param urlStr İstek yapılacak tam URL
+     * @return Sunucudan dönen yanıt gövdesi metin olarak
+     * @throws Exception İstek sırasında bağlantı veya okuma hatası oluşursa
      */
     public String get(String urlStr) throws Exception {
         HttpURLConnection conn = null;
@@ -64,9 +77,18 @@ public class HttpService {
         }
     }
 
+    /**
+     * Yeni bir HttpURLConnection açar, zaman aşımı ve yetkilendirme başlıklarını ayarlar.
+     *
+     * @param urlStr Bağlanılacak URL
+     * @return Açılmış ve yapılandırılmış HttpURLConnection nesnesi
+     * @throws Exception URL oluşturma veya bağlantı açma sırasında hata oluşursa
+     */
     private HttpURLConnection openConnection(String urlStr) throws Exception {
         URL url = new URL(urlStr);
-        HttpURLConnection conn = (HttpURLConnection) (proxy == null ? url.openConnection() : url.openConnection(proxy));
+        HttpURLConnection conn = (HttpURLConnection) (proxy == null
+                ? url.openConnection()
+                : url.openConnection(proxy));
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(5000);
         conn.setReadTimeout(5000);
@@ -81,6 +103,13 @@ public class HttpService {
         return conn;
     }
 
+    /**
+     * Açık InputStream'den satır satır okuyarak tüm içeriği String olarak döner.
+     *
+     * @param is Sunucudan gelen InputStream
+     * @return Okunan metin içeriği
+     * @throws Exception Okuma sırasında hata oluşursa
+     */
     private String readResponse(InputStream is) throws Exception {
         StringBuilder sb = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {

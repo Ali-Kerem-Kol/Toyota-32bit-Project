@@ -11,9 +11,9 @@ import java.io.FileReader;
 import java.util.Map;
 
 /**
- * <p>DynamicFormulaEngine loads and executes a JavaScript file,
- * calling "compute(context)" function to return a double[] result.
- * This enables dynamic formula calculation from an external script.</p>
+ * DynamicFormulaService dışarıdan sağlanan JavaScript dosyasını
+ * yükleyip compute(context) fonksiyonunu çalıştırarak
+ * hesaplama sonuçlarını döndüren servistir.
  */
 public class DynamicFormulaService {
 
@@ -23,10 +23,11 @@ public class DynamicFormulaService {
     private static boolean initialized = false;
 
     /**
-     * Executes the JS function "compute(context)" returning double[].
+     * compute(context) JavaScript fonksiyonunu çağırır ve
+     * hesaplanan bid/ask değerlerini içeren double[] döner.
      *
-     * @param context A map containing named variables for formula
-     * @return double[] result of the script
+     * @param context Hesaplama için gerekli değişkenleri içeren map
+     * @return JavaScript fonksiyonundan dönen bid ve ask değerleri
      */
     public static double[] calculate(Map<String, Object> context) {
         String method = ConfigReader.getCalculationMethod();

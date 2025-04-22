@@ -16,8 +16,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * RateProducerService handles sending messages to a Kafka topic asynchronously.
- * If Kafka is unavailable at startup, the producer is periodically reinitialized.
+ * KafkaProducerService hesaplanan kurları RedisService üzerinden alır
+ * ve Kafka topicine asenkron olarak gönderir
+ * Kafka producer başlatılamazsa arka planda belirli aralıklarla yeniden başlatma dener
  */
 public class KafkaProducerService {
 
@@ -33,7 +34,8 @@ public class KafkaProducerService {
     private final String[] calculatedRateKeys = {"USDTRY", "EURTRY", "GBPTRY"};
 
     /**
-     * @param bootstrapServers e.g. "localhost:9092"
+     * KafkaProducerService nesnesini oluşturur ve producer ı başlatmayı dener
+     * @param bootstrapServers Kafka broker adresi (örneğin "localhost:9092")
      */
     public KafkaProducerService(String bootstrapServers) {
         this.bootstrapServers = bootstrapServers;
@@ -70,8 +72,9 @@ public class KafkaProducerService {
     }
 
     /**
-     * Asynchronously sends all calculated rates from Redis to Kafka.
-     * @param redis The RedisService instance for retrieving calculated rates.
+     * RedisService üzerinden hesaplanan tüm kurları alır
+     * ve Kafka topicine asenkron olarak gönderir
+     * @param redis RedisService örneği
      */
     public void sendCalculatedRatesToKafka(RedisService redis) {
         for (String rateKey : calculatedRateKeys) {
@@ -89,9 +92,9 @@ public class KafkaProducerService {
     }
 
     /**
-     * Asynchronously sends a single rate message to Kafka.
-     * @param calcRateName The calculated rate's name.
-     * @param calcRate The Rate object.
+     * Tek bir kur mesajını Kafka topicine gönderir
+     * @param calcRateName Gönderilecek kur adı
+     * @param calcRate Gönderilecek Rate nesnesi
      */
     private void sendRateToKafka(String calcRateName, Rate calcRate) {
         double bid = calcRate.getFields().getBid();

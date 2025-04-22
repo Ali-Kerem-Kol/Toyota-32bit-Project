@@ -5,9 +5,18 @@ import java.nio.file.Paths;
 import java.io.File;
 import org.json.JSONObject;
 
+/**
+ * ConfigReader sınıfı, verilen JSON yapılandırma dosyasını okuyup
+ * içindeki ayarları elde etmeye yarar.
+ */
 public class ConfigReader {
     private JSONObject config;
 
+    /**
+     * Yapılandırma dosyasını yükler ve içeriğini parse eder.
+     *
+     * @param configFile JSON formatındaki yapılandırma dosyasının yolu
+     */
     public ConfigReader(String configFile) {
         try {
             // Dosya yolunu mutlak yol olarak belirleyelim
@@ -27,14 +36,33 @@ public class ConfigReader {
         }
     }
 
+    /**
+     * Başlangıç döviz kuru değerini döner.
+     *
+     * @param rateName "initialRates" nesnesi içindeki döviz kuru anahtarı
+     * @return ilgili döviz kuru değeri
+     * @throws org.json.JSONException anahtar bulunamazsa veya tip uyumsuzluğu varsa
+     */
     public double getInitialRate(String rateName) {
         return config.getJSONObject("initialRates").getDouble(rateName);
     }
 
+    /**
+     * Veri yayını arasındaki bekleme süresini (milisaniye) döner.
+     *
+     * @return yayın sıklığı (milisaniye cinsinden)
+     * @throws org.json.JSONException ilgili anahtar yoksa veya tip uyumsuzluğu varsa
+     */
     public int getPublishFrequency() {
         return config.getInt("publishFrequency");
     }
 
+    /**
+     * Toplam kaç kez veri yayınlanacağını döner.
+     *
+     * @return yayın sayısı
+     * @throws org.json.JSONException ilgili anahtar yoksa veya tip uyumsuzluğu varsa
+     */
     public int getPublishCount() {
         return config.getInt("publishCount");
     }

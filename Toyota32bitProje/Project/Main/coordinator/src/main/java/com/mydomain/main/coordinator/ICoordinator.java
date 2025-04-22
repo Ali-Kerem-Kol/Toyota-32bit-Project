@@ -5,55 +5,64 @@ import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
 
 /**
- * <p>CoordinatorInterface defines callback methods for connection events,
- * new data arrival, updates, and status changes of rates. Also a stub for
- * fetching rates from REST on demand.</p>
+ * Veri sağlayıcılarından gelen olayları dinleyen ve işleyen arayüz.
+ * <p>
+ * Bağlantı olayları, yeni veri gelişleri, güncellemeler ve durum değişiklikleri
+ * için callback metotları içerir. Ayrıca isteğe bağlı olarak REST üzerinden
+ * oran çekme metodu da tanımlıdır.
+ * </p>
  */
 public interface ICoordinator {
 
     /**
-     * Called when a provider (TCP or REST) establishes a connection.
-     * @param platformName Name of the platform (e.g. "TCP_PLATFORM")
-     * @param status True if connected, false if not
+     * Sağlayıcı ile bağlantı kurulduğunda çağrılır.
+     *
+     * @param platformName Sağlayıcı platformunun adı (ör. "TCP_PLATFORM")
+     * @param status       Bağlantı durumu (true = bağlantı başarılı, false = başarısız)
      */
     void onConnect(String platformName, Boolean status);
 
     /**
-     * Called when a provider is disconnected.
-     * @param platformName platform name
-     * @param status True if successful
+     * Sağlayıcı ile bağlantı kesildiğinde çağrılır.
+     *
+     * @param platformName Sağlayıcı platformunun adı
+     * @param status       Çıkış işleminin başarılı olup olmadığı (true/false)
      */
     void onDisConnect(String platformName, Boolean status);
 
     /**
-     * Called when a new rate is first available.
-     * @param platformName platform name
-     * @param rateName the rate key
-     * @param rate the Rate object
+     * Yeni bir oran verisi ilk kez geldiğinde çağrılır.
+     *
+     * @param platformName Sağlayıcı platformunun adı
+     * @param rateName     Gelen oranın anahtarı (ör. "PF1_USDTRY")
+     * @param rate         Gelen Rate nesnesi
      */
     void onRateAvailable(String platformName, String rateName, Rate rate);
 
     /**
-     * Called on subsequent updates to an existing rate.
-     * @param platformName platform name
-     * @param rateName the rate key
-     * @param rateFields new field values (bid, ask, etc.)
+     * Mevcut bir oran güncellendiğinde çağrılır.
+     *
+     * @param platformName Sağlayıcı platformunun adı
+     * @param rateName     Güncellenen oranın anahtarı
+     * @param rateFields   Yeni değerleri içeren RateFields nesnesi
      */
     void onRateUpdate(String platformName, String rateName, RateFields rateFields);
 
     /**
-     * Called on status changes for a rate (active/inactive).
-     * @param platformName platform name
-     * @param rateName the rate key
-     * @param rateStatus updated status
+     * Oran durumunda (aktif/pasif) değişiklik olduğunda çağrılır.
+     *
+     * @param platformName Sağlayıcı platformunun adı
+     * @param rateName     Durumu değişen oranın anahtarı
+     * @param rateStatus   Yeni RateStatus nesnesi
      */
     void onRateStatus(String platformName, String rateName, RateStatus rateStatus);
 
     /**
-     * Optional method to fetch a rate from REST provider on demand.
-     * @param platformName platform name
-     * @param rateName the rate key
-     * @return Rate if found, or null
+     * İsteğe bağlı olarak REST sağlayıcısından oranın anlık çekilmesi gerektiğinde çağrılır.
+     *
+     * @param platformName Sağlayıcı platformunun adı
+     * @param rateName     Çekilmek istenen oranın anahtarı
+     * @return Bulunursa Rate nesnesi, bulunamazsa null
      */
     Rate fetchRateFromRest(String platformName, String rateName);
 }

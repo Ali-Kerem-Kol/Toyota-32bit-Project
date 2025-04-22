@@ -7,6 +7,11 @@ import org.apache.logging.log4j.Logger;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
+/**
+ * RedisService, Redis bağlantısını yönetir.
+ * Ham ve hesaplanmış rate verilerini ön eklerle saklar ve okur.
+ * Bağlantı kaybı durumunda otomatik yeniden bağlanma sağlar.
+ */
 public class RedisService {
 
     private static final Logger logger = LogManager.getLogger(RedisService.class);
@@ -140,7 +145,7 @@ public class RedisService {
     }
 
 
-    // İsteğe bağlı: Varsayılan (prefix olmadan) metodlar
+    // Varsayılan (prefix olmadan) metodlar
     public void putRate(String rateName, Rate rate) {
         putRateWithPrefix("", rateName, rate);
     }

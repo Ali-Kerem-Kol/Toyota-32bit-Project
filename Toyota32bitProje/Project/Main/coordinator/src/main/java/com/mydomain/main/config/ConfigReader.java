@@ -10,8 +10,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * ConfigReader, resources içindeki config.json dosyasını okuyarak,
- * Kafka, calculation ve Redis ayarlarını sağlayan metodları sunar.
+ * Uygulamanın config.json dosyasındaki ayarları okuyan yardımcı sınıf.
+ * <p>
+ * Kafka, hesaplama (calculation) ve Redis konfigürasyonlarını sağlar,
+ * ayrıca dinamik yüklenecek sağlayıcıları (providers) getirir.
+ * </p>
  */
 public class ConfigReader {
 
@@ -49,7 +52,12 @@ public class ConfigReader {
         }
     }
 
-
+    /**
+     * Kafka ayarlarını içeren JSON nesnesini döner.
+     *
+     * @return Kafka konfigürasyon nesnesi
+     * @throws ConfigLoadException Kafka nesnesi eksikse fırlatılır
+     */
     private static JSONObject getKafkaObject() {
         if (!config.has("kafka")) {
             logger.error("Missing 'kafka' object in config.json!");
@@ -58,6 +66,12 @@ public class ConfigReader {
         return config.getJSONObject("kafka");
     }
 
+    /**
+     * Redis ayarlarını içeren JSON nesnesini döner.
+     *
+     * @return Redis konfigürasyon nesnesi
+     * @throws ConfigLoadException Redis nesnesi eksikse fırlatılır
+     */
     private static JSONObject getRedisObject() {
         if (!config.has("redis")) {
             logger.error("Missing 'redis' object in config.json!");
@@ -66,14 +80,12 @@ public class ConfigReader {
         return config.getJSONObject("redis");
     }
 
-    public static JSONArray getProviders() {
-        if (!config.has("providers")) {
-            logger.warn("No 'providers' array found in config.json; returning empty array.");
-            return new JSONArray();
-        }
-        return config.getJSONArray("providers");
-    }
-
+    /**
+     * Calculation (hesaplama) ayarlarını içeren JSON nesnesini döner.
+     *
+     * @return Calculation konfigürasyon nesnesi
+     * @throws ConfigLoadException Calculation nesnesi eksikse fırlatılır
+     */
     private static JSONObject getCalculationObject() {
         if (!config.has("calculation")) {
             logger.error("Missing 'calculation' object in config.json!");
@@ -82,46 +94,107 @@ public class ConfigReader {
         return config.getJSONObject("calculation");
     }
 
+    /**
+     * config.json içindeki "providers" dizisini döner.
+     *
+     * @return Sağlayıcı tanımlarını içeren JSONArray; yoksa boş dizi
+     */
+    public static JSONArray getProviders() {
+        if (!config.has("providers")) {
+            logger.warn("No 'providers' array found in config.json; returning empty array.");
+            return new JSONArray();
+        }
+        return config.getJSONArray("providers");
+    }
 
+    /**
+     * Kafka bootstrap sunucu adreslerini döner.
+     *
+     * @return Bootstrap sunucu adresleri (örneğin "localhost:9092")
+     */
     public static String getKafkaBootstrapServers() {
         return getKafkaObject().getString("bootstrapServers");
     }
 
+    /**
+     * Kafka topic adını döner.
+     *
+     * @return Kafka topic ismi
+     */
     public static String getKafkaTopicName() {
         return getKafkaObject().getString("topicName");
     }
 
+    /**
+     * Kafka ACK ayarını döner.
+     *
+     * @return ACK konfigürasyonu (örneğin "all", "1", "0")
+     */
     public static String getKafkaAcks() {
         return getKafkaObject().getString("acks");
     }
 
+    /**
+     * Kafka yeniden deneme (retry) sayısını döner.
+     *
+     * @return Retry sayısı
+     */
     public static int getKafkaRetries() {
         return getKafkaObject().getInt("retries");
     }
 
+    /**
+     * Hesaplama yöntemini döner (örn. "javascript").
+     *
+     * @return Calculation method adı
+     */
     public static String getCalculationMethod() {
         return getCalculationObject().getString("calculationMethod");
     }
 
+    /**
+     * Harici formül dosyasının yolunu döner.
+     *
+     * @return Formül dosyası yolu
+     */
     public static String getFormulaFilePath() {
         return getCalculationObject().getString("formulaFilePath");
     }
 
+    /**
+     * Redis sunucu host adresini döner.
+     *
+     * @return Redis host (örneğin "localhost")
+     */
     public static String getRedisHost() {
         return getRedisObject().getString("host");
     }
 
+    /**
+     * Redis sunucu port numarasını döner.
+     *
+     * @return Redis port (örneğin 6379)
+     */
     public static int getRedisPort() {
         return getRedisObject().getInt("port");
     }
 
+    /**
+     * Redis veritabanı numarasını döner.
+     *
+     * @return Redis database indeksi (varsayılan 0)
+     */
     public static int getRedisDatabase() {
         return getRedisObject().optInt("database", 0);
     }
 
+    /**
+     * Redis şifre bilgisini döner.
+     *
+     * @return Redis password (boş ise şifresiz bağlantı)
+     */
     public static String getRedisPassword() {
         return getRedisObject().optString("password", "");
     }
-
 
 }

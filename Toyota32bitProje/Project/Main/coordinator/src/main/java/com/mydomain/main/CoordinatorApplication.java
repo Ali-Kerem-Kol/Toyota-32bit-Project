@@ -6,13 +6,22 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * <p>CoordinatorMain is the entry point for the standalone coordinator application.
- * It initializes the Coordinator + Providers from config.json, then waits indefinitely.</p>
+ * CoordinatorApplication, bağımsız koordinatör uygulamasının giriş noktasıdır.
+ * ConfigReader aracılığıyla yapılandırmayı yükler, koordinatör ve sağlayıcıları başlatır
+ * ve uygulamanın çalışmaya devam etmesini sağlar.
  */
 public class CoordinatorApplication {
 
     private static final Logger logger = LogManager.getLogger(CoordinatorApplication.class);
 
+    /**
+     * Uygulamayı başlatır:
+     * 1) Log ile başlama mesajı yazar,
+     * 2) AppConfig ile ICoordinator örneğini oluşturur,
+     * 3) Ana iş parçacığını sonsuza dek bekleterek uygulamanın çalışmasını sürdürür.
+     *
+     * @param args komut satırı argümanları (kullanılmıyor)
+     */
     public static void main(String[] args) {
         logger.info("=== Starting Coordinator... ===");
 
