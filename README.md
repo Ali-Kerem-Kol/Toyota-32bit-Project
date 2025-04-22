@@ -43,26 +43,27 @@ java -jar target/*.jar
 - Consumer‑PostgreSQL: Kafka → PostgreSQL
 ```
 
-###Docker Compose ile Tam Entegrasyon
+### Docker Compose ile Tam Entegrasyon
 ```bash
 docker-compose up --build
 ```
-Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consumer, Elasticsearch, Kibana, Filebeat hepsi bir arada.
+- Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consumer, Elasticsearch, Kibana, Filebeat hepsi bir arada.
 
-##Bileşenler
-###TCP Simülatör
+## Bileşenler
+
+### TCP Simülatör
 - Telnet publish/subscribe
 
 - subscribe|RATE_NAME, unsubscribe|RATE_NAME
 
 - ConfigReader ile initialRates, publishFrequency, publishCount
 
-###REST API Simülatör
+### REST API Simülatör
 - Spring Boot, /api/rates/{rateName}
 
 - Authorization: Bearer <apiKey>
 
-###Coordinator (Ana Uygulama)
+### Coordinator (Ana Uygulama)
 - Dinamik provider yükleme (reflection)
 
 - Redis’e raw & calculated veriler
@@ -71,32 +72,32 @@ Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consume
 
 - KafkaProducerService ile Kafka’ya yayın
 
-###Kafka Producer
+### Kafka Producer
 - Asenkron edilir, eksikse yeniden init
 
 - sendCalculatedRatesToKafka(...)
 
-###Redis Service
+### Redis Service
 - Jedis, auto‑reconnect monitor
 
 - putRawRate / getRawRate
 
 - putCalculatedRate / getCalculatedRate
 
-###Rate Calculator
+### Rate Calculator
 - calculateUsdTry, calculateEurTry, calculateGbpTry
 
 - Formüller JS dosyasında
 
-###Kafka Consumer (PostgreSQL)
+### Kafka Consumer (PostgreSQL)
 - Spring Kafka listener → RatesRepository ile tbl_rates tablosuna kayıt
 
-###Filebeat → Elasticsearch → Kibana
+### Filebeat → Elasticsearch → Kibana
 - filebeat.yml ile Coordinator log’larını index’ler
 
 - Kibana Discover ile canlı log
 
-##Konfigürasyon Dosyaları
+## Konfigürasyon Dosyaları
 - Servers/TCPServer/src/.../config.json
 
 - Servers/RESTServer/src/.../config.json
@@ -109,7 +110,7 @@ Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consume
 
 - docker-compose.yml
 
-##Kullanım Örnekleri
+## Kullanım Örnekleri
 - Telnet ile abone olmak
 
 ```bash
@@ -132,7 +133,7 @@ Tarayıcıda http://localhost:5601
 ```bash
 psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates;"
 ```
-##İletişim
+## İletişim
 - Proje Sahibi: Ali Kerem Kol
 
 - E‑posta: ali.kol@example.com
