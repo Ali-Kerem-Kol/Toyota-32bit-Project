@@ -122,8 +122,9 @@ subscribe|PF1_EURUSD
 ```bash
 curl -H "Authorization: Bearer 8f5d3c9a-94b0-49d4-87e9-12a5c13e6c7a" \
      http://localhost:8081/api/rates/PF2_USDTRY
-	 ```
+```
 - Kibana’da log izlemek
+
 ```bash
 Tarayıcıda http://localhost:5601
 ```
