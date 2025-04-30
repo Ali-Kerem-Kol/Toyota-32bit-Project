@@ -161,7 +161,9 @@ public class TCPServerApplication {
          * @return Eğer çift geçerliyse true, değilse false
          */
         private boolean isValidCurrencyPair(String pair) {
-            return pair.equals("PF1_USDTRY") || pair.equals("PF1_EURUSD") || pair.equals("PF1_GBPUSD");
+            ConfigReader config = new ConfigReader("src/main/java/resources/config.json");
+            Set<String> validPairs = config.getInitialRates(); // Ensure this method exists in ConfigReader
+            return validPairs.contains(pair);
         }
 
         /**

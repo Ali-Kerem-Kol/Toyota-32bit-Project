@@ -3,6 +3,9 @@ package com.mydomain;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.io.File;
+import java.util.HashSet;
+import java.util.Set;
+
 import org.json.JSONObject;
 
 /**
@@ -45,6 +48,18 @@ public class ConfigReader {
      */
     public double getInitialRate(String rateName) {
         return config.getJSONObject("initialRates").getDouble(rateName);
+    }
+
+    /**
+     * Döviz çiftlerini döner.
+     *
+     * @return Döviz çiftlerini içeren bir Set
+     * @throws org.json.JSONException ilgili anahtar yoksa veya tip uyumsuzluğu varsa
+     */
+    public Set<String> getInitialRates() {
+        Set<String> currencyPairs = new HashSet<>();
+        config.getJSONObject("initialRates").keys().forEachRemaining(currencyPairs::add);
+        return currencyPairs;
     }
 
     /**
