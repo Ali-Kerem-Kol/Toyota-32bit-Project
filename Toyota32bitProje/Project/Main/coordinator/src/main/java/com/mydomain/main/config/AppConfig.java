@@ -48,16 +48,14 @@ public class AppConfig {
     public static ICoordinator init() {
         logger.info("=== AppConfig init started ===");
 
-        // Kafka producer oluşturuluyor.
-        KafkaProducerService kafkaProducerService = createKafkaProducer();
+        // RedisService oluşturuluyor
+        RedisService redisService = new RedisService(ConfigReader.getRedisHost(), ConfigReader.getRedisPort());
 
-        // Redis ayarlarını config.json'dan okuyarak RedisService örneğini oluşturuyoruz.
-        String redisHost = ConfigReader.getRedisHost();
-        int redisPort = ConfigReader.getRedisPort();
-        RedisService redisService = new RedisService(redisHost, redisPort);
+        // RateCalculatorService oluşturuluyor
+        RateCalculatorService rateCalculatorService = new RateCalculatorService(redisService);
 
-        // Rate hesaplayıcı servisi
-        RateCalculatorService rateCalculatorService = new RateCalculatorService();
+        // KafkaProducerService oluşturuluyor
+        KafkaProducerService kafkaProducerService = new KafkaProducerService(ConfigReader.getKafkaBootstrapServers(),redisService);
 
         // Coordinator oluşturuluyor
         Coordinator coordinator = new Coordinator(redisService, rateCalculatorService, kafkaProducerService);
@@ -101,25 +99,6 @@ public class AppConfig {
         }
 
         return coordinator;
-    }
-
-    /**
-     * KafkaProducerService örneğini oluşturur.
-     * <p>
-     * bootstrap sunucularını ConfigReader üzerinden alır.
-     * </p>
-     *
-     * @return Oluşturulmuş KafkaProducerService
-     * @throws KafkaPublishingException Kafka üretici oluşturulamıyorsa
-     */
-    private static KafkaProducerService createKafkaProducer() {
-        try {
-            String bootstrap = ConfigReader.getKafkaBootstrapServers();
-            return new KafkaProducerService(bootstrap);
-        } catch (KafkaException e) {
-            logger.error("Failed to create Kafka producer => {}", e.getMessage(), e);
-            throw new KafkaPublishingException("Error creating Kafka producer", e);
-        }
     }
 
     /**

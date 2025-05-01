@@ -29,6 +29,7 @@ public class RedisService {
         startConnectionMonitor();
     }
 
+
     /**
      * Redis sunucusuna bağlantıyı kurar.
      */
@@ -130,7 +131,6 @@ public class RedisService {
     public void putRawRate(String rateName, Rate rate) {
         putRateWithPrefix("raw:", rateName, rate);
     }
-
     public Rate getRawRate(String rateName) {
         return getRateWithPrefix("raw:", rateName);
     }
@@ -139,17 +139,14 @@ public class RedisService {
     public void putCalculatedRate(String rateName, Rate rate) {
         putRateWithPrefix("calculated:", rateName, rate);
     }
-
     public Rate getCalculatedRate(String rateName) {
         return getRateWithPrefix("calculated:", rateName);
     }
-
 
     // Varsayılan (prefix olmadan) metodlar
     public void putRate(String rateName, Rate rate) {
         putRateWithPrefix("", rateName, rate);
     }
-
     public Rate getRate(String rateName) {
         return getRateWithPrefix("", rateName);
     }

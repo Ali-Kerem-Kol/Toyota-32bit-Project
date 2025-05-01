@@ -33,12 +33,15 @@ public class KafkaProducerService {
 
     private final String[] calculatedRateKeys = {"USDTRY", "EURTRY", "GBPTRY"};
 
+    private final RedisService redisService;
+
     /**
      * KafkaProducerService nesnesini oluşturur ve producer ı başlatmayı dener
      * @param bootstrapServers Kafka broker adresi (örneğin "localhost:9092")
      */
-    public KafkaProducerService(String bootstrapServers) {
+    public KafkaProducerService(String bootstrapServers, RedisService redisService) {
         this.bootstrapServers = bootstrapServers;
+        this.redisService = redisService;
         this.topicName = ConfigReader.getKafkaTopicName();
         this.acks = ConfigReader.getKafkaAcks();
         this.retries = ConfigReader.getKafkaRetries();
@@ -74,11 +77,10 @@ public class KafkaProducerService {
     /**
      * RedisService üzerinden hesaplanan tüm kurları alır
      * ve Kafka topicine asenkron olarak gönderir
-     * @param redis RedisService örneği
      */
-    public void sendCalculatedRatesToKafka(RedisService redis) {
+    public void sendCalculatedRatesToKafka() {
         for (String rateKey : calculatedRateKeys) {
-            Rate calcRate = redis.getCalculatedRate(rateKey);
+            Rate calcRate = redisService.getCalculatedRate(rateKey);
             if (calcRate == null) {
                 logger.warn("Calculated rate '{}' not found.", rateKey);
                 continue;

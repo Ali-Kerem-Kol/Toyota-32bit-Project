@@ -19,33 +19,38 @@ public class RateCalculatorService {
 
     private static final Logger logger = LogManager.getLogger(RateCalculatorService.class);
 
+    private final RedisService redisService;
+
+    public RateCalculatorService(RedisService redisService) {
+        this.redisService = redisService;
+    }
+
     /**
      * RedisService üzerindeki raw: ön ekli kurları alır
      * USDTRY, EURTRY, GBPTRY hesaplamalarını yapar
      * Hesaplanan kurları calculated: ön ekli olarak Redis'e kaydeder
-     * @param redis RedisService örneği
      * @return hesaplanan kurların adıyla eşleşen Rate nesneleri
      */
-    public Map<String, Rate> calculateRates(RedisService redis) {
+    public Map<String, Rate> calculateRates() {
         Map<String, Rate> rates = new HashMap<>();
         try {
             // USDTRY hesaplaması için gerekli verileri kontrol ediyoruz.
-            Rate pf1UsdTry = redis.getRawRate("PF1_USDTRY");
-            Rate pf2UsdTry = redis.getRawRate("PF2_USDTRY");
+            Rate pf1UsdTry = redisService.getRawRate("PF1_USDTRY");
+            Rate pf2UsdTry = redisService.getRawRate("PF2_USDTRY");
             if (pf1UsdTry == null || pf2UsdTry == null ||
                     !pf1UsdTry.getStatus().isActive() || !pf2UsdTry.getStatus().isActive() ||
                     !pf1UsdTry.getStatus().isUpdated() || !pf2UsdTry.getStatus().isUpdated()) {
                 logger.warn("USDTRY hesaplaması yapılamıyor: PF1_USDTRY veya PF2_USDTRY eksik ya da güncel değil.");
             } else {
                 Rate usdTry = calculateUsdTry(pf1UsdTry, pf2UsdTry);
-                redis.putCalculatedRate("USDTRY", usdTry);
+                redisService.putCalculatedRate("USDTRY", usdTry);
                 logger.info("🔹 USDTRY => {}", usdTry);
                 rates.put("USDTRY",usdTry);
             }
 
             // EURTRY hesaplaması için kontrol
-            Rate pf1EurUsd = redis.getRawRate("PF1_EURUSD");
-            Rate pf2EurUsd = redis.getRawRate("PF2_EURUSD");
+            Rate pf1EurUsd = redisService.getRawRate("PF1_EURUSD");
+            Rate pf2EurUsd = redisService.getRawRate("PF2_EURUSD");
             if (pf1UsdTry == null || pf2UsdTry == null || pf1EurUsd == null || pf2EurUsd == null ||
                     !pf1UsdTry.getStatus().isActive() || !pf2UsdTry.getStatus().isActive() ||
                     !pf1UsdTry.getStatus().isUpdated() || !pf2UsdTry.getStatus().isUpdated() ||
@@ -54,14 +59,14 @@ public class RateCalculatorService {
                 logger.warn("EURTRY hesaplaması yapılamıyor: PF1_EURUSD veya PF2_EURUSD veya USDTRY için gerekli rate'ler eksik ya da güncel değil.");
             } else {
                 Rate eurTry = calculateEurTry(pf1UsdTry, pf2UsdTry, pf1EurUsd, pf2EurUsd);
-                redis.putCalculatedRate("EURTRY", eurTry);
+                redisService.putCalculatedRate("EURTRY", eurTry);
                 logger.info("🔹 EURTRY => {}", eurTry);
                 rates.put("EURTRY",eurTry);
             }
 
             // GBPTRY hesaplaması için kontrol
-            Rate pf1GbpUsd = redis.getRawRate("PF1_GBPUSD");
-            Rate pf2GbpUsd = redis.getRawRate("PF2_GBPUSD");
+            Rate pf1GbpUsd = redisService.getRawRate("PF1_GBPUSD");
+            Rate pf2GbpUsd = redisService.getRawRate("PF2_GBPUSD");
             if (pf1UsdTry == null || pf2UsdTry == null || pf1GbpUsd == null || pf2GbpUsd == null ||
                     !pf1UsdTry.getStatus().isActive() || !pf2UsdTry.getStatus().isActive() ||
                     !pf1UsdTry.getStatus().isUpdated() || !pf2UsdTry.getStatus().isUpdated() ||
@@ -70,7 +75,7 @@ public class RateCalculatorService {
                 logger.warn("GBPTRY hesaplaması yapılamıyor: PF1_GBPUSD veya PF2_GBPUSD veya USDTRY için gerekli rate'ler eksik ya da güncel değil.");
             } else {
                 Rate gbpTry = calculateGbpTry(pf1UsdTry, pf2UsdTry, pf1GbpUsd, pf2GbpUsd);
-                redis.putCalculatedRate("GBPTRY", gbpTry);
+                redisService.putCalculatedRate("GBPTRY", gbpTry);
                 logger.info("🔹 GBPTRY => {}", gbpTry);
                 rates.put("GBPTRY",gbpTry);
             }

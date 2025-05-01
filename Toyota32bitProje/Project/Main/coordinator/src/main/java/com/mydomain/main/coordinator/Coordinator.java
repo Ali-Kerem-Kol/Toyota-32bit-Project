@@ -32,9 +32,7 @@ public class Coordinator implements ICoordinator {
      * @param rateCalculatorService  Verileri işleyip yeni oranları hesaplayan servis
      * @param kafkaProducerService   Hesaplanan oranları Kafka'ya gönderen servis
      */
-    public Coordinator(RedisService redisService,
-                       RateCalculatorService rateCalculatorService,
-                       KafkaProducerService kafkaProducerService) {
+    public Coordinator(RedisService redisService, RateCalculatorService rateCalculatorService,KafkaProducerService kafkaProducerService) {
         this.redisService = redisService;
         this.rateCalculatorService = rateCalculatorService;
         this.kafkaProducerService = kafkaProducerService;
@@ -75,7 +73,7 @@ public class Coordinator implements ICoordinator {
     public void onRateAvailable(String platformName, String rateName, Rate rate) {
         redisService.putRawRate(rateName, rate);
         logger.info("📈 New Rate Available ({}): {}", platformName, rate);
-        rateCalculatorService.calculateRates(redisService);
+        rateCalculatorService.calculateRates();
     }
 
     /**
@@ -96,8 +94,8 @@ public class Coordinator implements ICoordinator {
                 redisService.putRawRate(rateName, rate);
             }
             logger.info("📊 Rate Updated ({}): {} -> {}", platformName, rateName, rateFields);
-            rateCalculatorService.calculateRates(redisService);
-            kafkaProducerService.sendCalculatedRatesToKafka(redisService);
+            rateCalculatorService.calculateRates();
+            kafkaProducerService.sendCalculatedRatesToKafka();
         } catch (Exception e) {
             logger.error("❌ Error in onRateUpdate: {}", e.getMessage(), e);
         }

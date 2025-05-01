@@ -37,8 +37,7 @@ public class HttpService {
      * @param useBasic     Basic Auth kullanılsın mı
      * @param proxy        HTTP istekleri için proxy (null ise doğrudan bağlanır)
      */
-    public HttpService(String apiKey, String basicUser, String basicPass,
-                       boolean useBearer, boolean useBasic, Proxy proxy) {
+    public HttpService(String apiKey, String basicUser, String basicPass, boolean useBearer, boolean useBasic, Proxy proxy) {
         this.apiKey = apiKey;
         this.basicAuthUser = basicUser;
         this.basicAuthPass = basicPass;
@@ -46,6 +45,7 @@ public class HttpService {
         this.useBasicAuth = useBasic;
         this.proxy = proxy;
     }
+
 
     /**
      * Belirtilen URL'e tek seferlik GET isteği gönderir.
@@ -120,4 +120,5 @@ public class HttpService {
         }
         return sb.toString();
     }
+
 }

@@ -24,7 +24,7 @@
 
 	<dependencies>
 
-		<!-- 1) Spring Boot Starter Web (Logback exclude) -->
+		<!-- 1) Spring Boot Starter Web with Logback excluded -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
@@ -36,19 +36,25 @@
 			</exclusions>
 		</dependency>
 
-		<!-- 2) Spring Boot Starter Log4j2 -->
+		<!-- 2) Spring Boot Starter Data JPA with Logback excluded -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+			<exclusions>
+				<exclusion>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-starter-logging</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<!-- 3) Spring Boot Starter Log4j2 -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-log4j2</artifactId>
 		</dependency>
 
-		<!-- Spring Data JPA -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
-		</dependency>
-
-		<!-- Spring Kafka -->
+		<!-- 4) Spring Kafka -->
 		<dependency>
 			<groupId>org.springframework.kafka</groupId>
 			<artifactId>spring-kafka</artifactId>
@@ -68,18 +74,30 @@
 			<optional>true</optional>
 		</dependency>
 
-		<!-- Spring Boot Test -->
+		<!-- 5) Spring Boot Starter Test with Logback excluded -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-starter-logging</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 
-		<!-- Spring Kafka Test -->
+		<!-- 6) Spring Kafka Test with Logback excluded -->
 		<dependency>
 			<groupId>org.springframework.kafka</groupId>
 			<artifactId>spring-kafka-test</artifactId>
 			<scope>test</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>ch.qos.logback</groupId>
+					<artifactId>logback-classic</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 
 	</dependencies>
@@ -115,7 +133,7 @@
 				</configuration>
 			</plugin>
 
-			<!-- Surefire Plugin: Logback - Log4j çakışma çözümü -->
+			<!-- Surefire Plugin: ensure correct classloading -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
