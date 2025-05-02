@@ -113,8 +113,8 @@ public class AppConfig {
             Class<?> clazz = Class.forName(className);
             return (IProvider) clazz.getDeclaredConstructor().newInstance();
         } catch (Exception e) {
-            logger.error("Reflection error: failed to instantiate provider {}", className, e);
-            throw new ProviderInitializationException("Could not instantiate provider: " + className, e);
+            logger.error("Reflection error: failed to instantiate provider {}", className);
+            throw new ProviderInitializationException("Could not instantiate provider: " + className);
         }
     }
 
