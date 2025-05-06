@@ -8,6 +8,8 @@ import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Uygulamanın config.json dosyasındaki ayarları okuyan yardımcı sınıf.
@@ -105,6 +107,56 @@ public class ConfigReader {
             return new JSONArray();
         }
         return config.getJSONArray("providers");
+    }
+
+    /**
+     * Config dosyasındaki tüm sağlayıcılardan (providers) alınan
+     * "subscribeRates" alanlarındaki tam oran adlarını döndürür.
+     * <p>
+     * Örneğin: "PF1_USDTRY", "PF2_EURUSD" gibi değerler.
+     * Aynı oran tekrarlanıyorsa yalnızca bir kez döner.
+     * Ekleme sırasına sadık kalınır.
+     * </p>
+     *
+     * @return Tüm sağlayıcılardan alınan benzersiz ve sıralı kur adlarının kümesi
+     */
+    public static Set<String> getSubscribeRates() {
+        Set<String> rateSet = new LinkedHashSet<>();
+        JSONArray providers = getProviders();
+
+        for (int i = 0; i < providers.length(); i++) {
+            JSONObject provider = providers.getJSONObject(i);
+            if (provider.has("subscribeRates")) {
+                JSONArray rates = provider.getJSONArray("subscribeRates");
+                for (int j = 0; j < rates.length(); j++) {
+                    rateSet.add(rates.getString(j));
+                }
+            }
+        }
+
+        return rateSet;
+    }
+
+    /**
+     * Tüm "subscribeRates" değerlerinin sadece "_" karakterinden sonraki kısmını döndürür.
+     * <p>
+     * Örneğin: "PF1_USDTRY" → "USDTRY" olarak ayrıştırılır.
+     * Kaynak olarak {@link #getSubscribeRates()} metodu kullanılır, böylece tutarlılık sağlanır.
+     * Aynı oran tekrarlanıyorsa yalnızca bir kez döner.
+     * </p>
+     *
+     * @return Benzersiz ve sıralı kısa kur adlarının kümesi (örn: "USDTRY", "EURUSD")
+     */
+    public static Set<String> getSubscribeRatesShort() {
+        Set<String> shortRateSet = new LinkedHashSet<>();
+        Set<String> allRates = getSubscribeRates();
+
+        for (String fullRate : allRates) {
+            String shortRate = fullRate.split("_")[1];
+            shortRateSet.add(shortRate);
+        }
+
+        return shortRateSet;
     }
 
     /**

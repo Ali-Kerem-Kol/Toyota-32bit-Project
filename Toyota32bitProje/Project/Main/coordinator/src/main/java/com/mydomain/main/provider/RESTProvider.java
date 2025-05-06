@@ -177,7 +177,7 @@ public class RESTProvider implements IProvider {
                     logger.warn("REST poll thread interrupted => stopping");
                     break;
                 } catch (Exception e) {
-                    logger.error("REST poll error => {}", e.getMessage(), e);
+                    logger.error("REST poll error => {}", e.getMessage());
                 }
             }
         }, "RestProviderPollThread-" + platformName);
@@ -255,7 +255,7 @@ public class RESTProvider implements IProvider {
             return rate;
         } catch (Exception e) {
             logger.warn("Error fetching REST for rate={} => {}", rateName, e.getMessage());
-            logger.debug("Stacktrace:", e);
+            logger.debug("Stacktrace:", e.getMessage());
             return null;
         }
     }

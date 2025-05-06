@@ -10,10 +10,13 @@ import org.apache.logging.log4j.Logger;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * KafkaProducerService hesaplanan kurları RedisService üzerinden alır
@@ -31,7 +34,7 @@ public class KafkaProducerService {
     private final String acks;
     private final int retries;
 
-    private final String[] calculatedRateKeys = {"USDTRY", "EURTRY", "GBPTRY"};
+    private final Set<String> calculatedRateKeys;
 
     private final RedisService redisService;
 
@@ -42,12 +45,28 @@ public class KafkaProducerService {
     public KafkaProducerService(String bootstrapServers, RedisService redisService) {
         this.bootstrapServers = bootstrapServers;
         this.redisService = redisService;
+
         this.topicName = ConfigReader.getKafkaTopicName();
         this.acks = ConfigReader.getKafkaAcks();
         this.retries = ConfigReader.getKafkaRetries();
-        // Attempt initial producer creation; if fails, producer remains null.
+
+        // 1) ConfigReader’dan gelen short-rate’leri al
+        Set<String> shortNames = ConfigReader.getSubscribeRatesShort();
+
+        // 2) resultName’leri hesapla (USDTRY, EURTRY, GBPTRY, vs.)
+        this.calculatedRateKeys = shortNames.stream()
+                .map(sn -> {
+                    if (sn.endsWith("USD") && !sn.equals("USDTRY")) {
+                        // EURUSD -> EURTRY, GBPUSD -> GBPTRY, vs.
+                        return sn.substring(0, 3) + "TRY";
+                    } else {
+                        // USDTRY olduğu gibi
+                        return sn;
+                    }
+                })
+                .collect(Collectors.toSet());
+
         initProducer();
-        // Schedule periodic attempts to initialize the producer if it is null.
         scheduler.scheduleAtFixedRate(() -> {
             if (producer == null) {
                 logger.info("Attempting to reinitialize Kafka producer...");

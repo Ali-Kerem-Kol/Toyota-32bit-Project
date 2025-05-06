@@ -1,5 +1,6 @@
 package com.mydomain.main.service;
 
+import com.mydomain.main.config.ConfigReader;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
@@ -7,7 +8,11 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Kur hesaplamalarını yapan servis
@@ -26,163 +31,115 @@ public class RateCalculatorService {
     }
 
     /**
-     * RedisService üzerindeki raw: ön ekli kurları alır
-     * USDTRY, EURTRY, GBPTRY hesaplamalarını yapar
-     * Hesaplanan kurları calculated: ön ekli olarak Redis'e kaydeder
-     * @return hesaplanan kurların adıyla eşleşen Rate nesneleri
+     * Redis’teki ham kurları alır, config.json’daki abone listesine göre gruplar oluşturur,
+     * JS formüllerini çalıştırarak hem direct (USDTRY) hem cross-rate (EURTRY, GBPTRY, …)
+     * kurlarını hesaplar, sonuçları Redis’e kaydeder ve geri döner.
+     *
+     * 1. ConfigReader’dan PFx_… formatındaki tam adları ve kısa adları (USDTRY, EURUSD, …) okur.
+     * 2. Tam adları kısa adlara göre gruplayarak direct ve cross-rate verilerini ayırır.
+     * 3. Tüm platform verilerinin aktif ve güncel olduğunu doğrular.
+     * 4. Her bir kısa ad için DynamicFormulaService ile JavaScript formülünü çalıştırıp
+     *    ortalama bid/ask değerlerini hesaplar.
+     * 5. Hesaplanan Rate nesnelerini Redis’e yazar ve bir Map<String, Rate> içinde döner.
+     *
+     * @return Hesaplanan kurların kısa adlarını (USDTRY, EURTRY, GBPTRY, vb.) Rate nesneleriyle eşleyen bir Map
      */
     public Map<String, Rate> calculateRates() {
-        Map<String, Rate> rates = new HashMap<>();
-        try {
-            // USDTRY hesaplaması için gerekli verileri kontrol ediyoruz.
-            Rate pf1UsdTry = redisService.getRawRate("PF1_USDTRY");
-            Rate pf2UsdTry = redisService.getRawRate("PF2_USDTRY");
-            if (pf1UsdTry == null || pf2UsdTry == null ||
-                    !pf1UsdTry.getStatus().isActive() || !pf2UsdTry.getStatus().isActive() ||
-                    !pf1UsdTry.getStatus().isUpdated() || !pf2UsdTry.getStatus().isUpdated()) {
-                logger.warn("USDTRY hesaplaması yapılamıyor: PF1_USDTRY veya PF2_USDTRY eksik ya da güncel değil.");
-            } else {
-                Rate usdTry = calculateUsdTry(pf1UsdTry, pf2UsdTry);
-                redisService.putCalculatedRate("USDTRY", usdTry);
-                logger.info("🔹 USDTRY => {}", usdTry);
-                rates.put("USDTRY",usdTry);
+        // Döndürülecek sonuç haritası: kısa adı → hesaplanmış Rate
+        Map<String, Rate> calculated = new HashMap<>();
+
+        // 1) ConfigReader’dan tüm tam ve kısa adları al
+        Set<String> fullNames  = ConfigReader.getSubscribeRates();      // Örn. PF1_USDTRY, PF2_USDTRY, PF1_EURUSD, …
+        Set<String> shortNames = ConfigReader.getSubscribeRatesShort(); // Örn. USDTRY, EURUSD, GBPUSD, …
+
+        // 2) Tam adları arkasındaki kısa ada göre grupla (PF1_USDTRY→USDTRY, PF1_EURUSD→EURUSD, …)
+        Map<String, List<String>> byShort = fullNames.stream()
+                .collect(Collectors.groupingBy(full ->
+                        full.substring(full.indexOf('_') + 1)  // "_" sonrası kısmı al
+                ));
+
+        // 3) “direct” USDTRY grubunu önceden oku (cross‐rate’ler için ihtiyaç var)
+        List<String> usdGroup = byShort.get("USDTRY");
+        Map<String, Rate> rawUsd = usdGroup.stream()
+                .collect(Collectors.toMap(fn -> fn,
+                        fn -> redisService.getRawRate(fn)
+                ));
+
+        // 4) Tüm kısa adlar (USDTRY, EURUSD, GBPUSD…) için döngü
+        for (String shortName : shortNames) {
+            // 4a) Cross‐rate mi? (“EURUSD”/“GBPUSD”) → sonucu “EURTRY”/“GBPTRY” olarak kaydedeceğiz
+            boolean isCross = shortName.endsWith("USD") && !shortName.equals("USDTRY");
+            String resultName = isCross
+                    ? shortName.substring(0,3) + "TRY"   // EURUSD→EURTRY, GBPUSD→GBPTRY
+                    : shortName;                         // USDTRY→USDTRY
+
+            // 4b) O kısma ait tam ad listesi
+            List<String> groupFulls = byShort.get(shortName);
+            if (groupFulls == null || groupFulls.isEmpty()) {
+                logger.warn("Config içinde {} için tanım yok.", shortName);
+                continue;
             }
 
-            // EURTRY hesaplaması için kontrol
-            Rate pf1EurUsd = redisService.getRawRate("PF1_EURUSD");
-            Rate pf2EurUsd = redisService.getRawRate("PF2_EURUSD");
-            if (pf1UsdTry == null || pf2UsdTry == null || pf1EurUsd == null || pf2EurUsd == null ||
-                    !pf1UsdTry.getStatus().isActive() || !pf2UsdTry.getStatus().isActive() ||
-                    !pf1UsdTry.getStatus().isUpdated() || !pf2UsdTry.getStatus().isUpdated() ||
-                    !pf1EurUsd.getStatus().isActive() || !pf2EurUsd.getStatus().isActive() ||
-                    !pf1EurUsd.getStatus().isUpdated() || !pf2EurUsd.getStatus().isUpdated()) {
-                logger.warn("EURTRY hesaplaması yapılamıyor: PF1_EURUSD veya PF2_EURUSD veya USDTRY için gerekli rate'ler eksik ya da güncel değil.");
-            } else {
-                Rate eurTry = calculateEurTry(pf1UsdTry, pf2UsdTry, pf1EurUsd, pf2EurUsd);
-                redisService.putCalculatedRate("EURTRY", eurTry);
-                logger.info("🔹 EURTRY => {}", eurTry);
-                rates.put("EURTRY",eurTry);
+            // 5) O grubun ham Rate’lerini oku
+            Map<String, Rate> rawGroup = groupFulls.stream()
+                    .collect(Collectors.toMap(fn -> fn,
+                            fn -> redisService.getRawRate(fn)
+                    ));
+
+            // 6) Validasyon: hem USDTRY hem de bu grubun tüm Rate’leri aktif ve güncel olmalı
+            boolean allOk = Stream.concat(
+                            rawUsd.values().stream(),
+                            rawGroup.values().stream()
+                    )
+                    .allMatch(r -> r != null && r.getStatus().isActive() && r.getStatus().isUpdated());
+            if (!allOk) {
+                logger.warn("{} hesaplanamıyor: bazı ham kurlar eksik veya güncel değil.", shortName);
+                continue;
             }
 
-            // GBPTRY hesaplaması için kontrol
-            Rate pf1GbpUsd = redisService.getRawRate("PF1_GBPUSD");
-            Rate pf2GbpUsd = redisService.getRawRate("PF2_GBPUSD");
-            if (pf1UsdTry == null || pf2UsdTry == null || pf1GbpUsd == null || pf2GbpUsd == null ||
-                    !pf1UsdTry.getStatus().isActive() || !pf2UsdTry.getStatus().isActive() ||
-                    !pf1UsdTry.getStatus().isUpdated() || !pf2UsdTry.getStatus().isUpdated() ||
-                    !pf1GbpUsd.getStatus().isActive() || !pf2GbpUsd.getStatus().isActive() ||
-                    !pf1GbpUsd.getStatus().isUpdated() || !pf2GbpUsd.getStatus().isUpdated()) {
-                logger.warn("GBPTRY hesaplaması yapılamıyor: PF1_GBPUSD veya PF2_GBPUSD veya USDTRY için gerekli rate'ler eksik ya da güncel değil.");
-            } else {
-                Rate gbpTry = calculateGbpTry(pf1UsdTry, pf2UsdTry, pf1GbpUsd, pf2GbpUsd);
-                redisService.putCalculatedRate("GBPTRY", gbpTry);
-                logger.info("🔹 GBPTRY => {}", gbpTry);
-                rates.put("GBPTRY",gbpTry);
+            // 7) JS formülü için context haritası oluştur
+            Map<String, Object> ctx = new HashMap<>();
+            ctx.put("calcName", shortName);  // JS’e hangi shortName’i (“USDTRY”/“EURUSD”/“GBPUSD”) gönderiyoruz
+
+            // 7a) USDTRY ham verilerini context’e ekle: pf1UsdtryBid, pf2UsdtryAsk vb.
+            for (Map.Entry<String, Rate> e : rawUsd.entrySet()) {
+                String full     = e.getKey();                   // Örn. "PF1_USDTRY"
+                Rate rate       = e.getValue();
+                String provider = full.substring(0, full.indexOf('_')).toLowerCase(); // "pf1" veya "pf2"
+                String keyBase  = "Usdtry";                     // sabit, çünkü direct USDTRY
+                ctx.put(provider + keyBase + "Bid", rate.getFields().getBid());
+                ctx.put(provider + keyBase + "Ask", rate.getFields().getAsk());
             }
-        } catch (Exception e) {
-            logger.error("❌ Error in calculateRates(): {}", e.getMessage(), e);
+
+            // 7b) Cross‐rate grubunu da ekle: pf1EurusdBid, pf2EurusdAsk vb.
+            for (Map.Entry<String, Rate> e : rawGroup.entrySet()) {
+                String full     = e.getKey();                   // Örn. "PF1_EURUSD"
+                Rate rate       = e.getValue();
+                String provider = full.substring(0, full.indexOf('_')).toLowerCase(); // "pf1" veya "pf2"
+                // Kısa adı “Eurusd” veya “Gbpusd” formatına çevir
+                String currency = shortName.substring(0,1).toUpperCase()
+                        + shortName.substring(1).toLowerCase();
+                ctx.put(provider + currency + "Bid", rate.getFields().getBid());
+                ctx.put(provider + currency + "Ask", rate.getFields().getAsk());
+            }
+
+            // 8) JavaScript formülünü çalıştır
+            double[] result = DynamicFormulaService.calculate(ctx);
+
+            // 9) Sonucu Rate’ye dönüştürüp Redis’e ve sonuç haritasına ekle
+            Rate calc = new Rate(
+                    resultName,
+                    new RateFields(result[0], result[1], System.currentTimeMillis()),
+                    new RateStatus(true, true)
+            );
+            redisService.putCalculatedRate(resultName, calc);
+            calculated.put(resultName, calc);
+
+            // 10) Log’la
+            logger.info("🔹 {} => bid={}, ask={}", resultName, result[0], result[1]);
         }
-        return rates;
-    }
 
-
-    /**
-     * İki ham USDTRY kuru kullanarak ortalama bid ve ask değerini hesaplar
-     * @param pf1UsdTry platform 1 USDTRY Rate nesnesi
-     * @param pf2UsdTry platform 2 USDTRY Rate nesnesi
-     * @return hesaplanan USDTRY Rate nesnesi
-     */
-    public Rate calculateUsdTry(Rate pf1UsdTry, Rate pf2UsdTry) {
-        Map<String, Object> ctx = new HashMap<>();
-        ctx.put("calcName", "USDTRY");
-
-        // pf1UsdTry => pf1Bid, pf1Ask
-        ctx.put("pf1Bid", pf1UsdTry.getFields().getBid());
-        ctx.put("pf1Ask", pf1UsdTry.getFields().getAsk());
-
-        // pf2UsdTry => pf2Bid, pf2Ask
-        ctx.put("pf2Bid", pf2UsdTry.getFields().getBid());
-        ctx.put("pf2Ask", pf2UsdTry.getFields().getAsk());
-
-        double[] result = DynamicFormulaService.calculate(ctx);
-        double bid = result[0];
-        double ask = result[1];
-
-        Rate rate = new Rate("USDTRY",
-                new RateFields(bid, ask, System.currentTimeMillis()),
-                new RateStatus(true, true));
-        logger.debug("Calculated USDTRY => bid={}, ask={}", bid, ask);
-        return rate;
-    }
-
-    /**
-     * Ham USDTRY ve EURUSD kurları kullanarak EURTRY bid/ask hesaplamasını yapar
-     * @param pf1UsdTry platform 1 USDTRY Rate nesnesi
-     * @param pf2UsdTry platform 2 USDTRY Rate nesnesi
-     * @param pf1EurUsd platform 1 EURUSD Rate nesnesi
-     * @param pf2EurUsd platform 2 EURUSD Rate nesnesi
-     * @return hesaplanan EURTRY Rate nesnesi
-     */
-    public Rate calculateEurTry(Rate pf1UsdTry, Rate pf2UsdTry, Rate pf1EurUsd, Rate pf2EurUsd) {
-        Map<String, Object> ctx = new HashMap<>();
-        ctx.put("calcName", "EURTRY");
-
-        // For the 'usdMid' part
-        ctx.put("pf1Bid", pf1UsdTry.getFields().getBid());
-        ctx.put("pf1Ask", pf1UsdTry.getFields().getAsk());
-        ctx.put("pf2Bid", pf2UsdTry.getFields().getBid());
-        ctx.put("pf2Ask", pf2UsdTry.getFields().getAsk());
-
-        // EURUSD part
-        ctx.put("pf1EurUsdBid", pf1EurUsd.getFields().getBid());
-        ctx.put("pf1EurUsdAsk", pf1EurUsd.getFields().getAsk());
-        ctx.put("pf2EurUsdBid", pf2EurUsd.getFields().getBid());
-        ctx.put("pf2EurUsdAsk", pf2EurUsd.getFields().getAsk());
-
-        double[] result = DynamicFormulaService.calculate(ctx);
-        double bid = result[0];
-        double ask = result[1];
-
-        Rate rate = new Rate("EURTRY",
-                new RateFields(bid, ask, System.currentTimeMillis()),
-                new RateStatus(true, true));
-        logger.debug("Calculated EURTRY => bid={}, ask={}", bid, ask);
-        return rate;
-    }
-
-    /**
-     * Ham USDTRY ve GBPUSD kurları kullanarak GBPTRY bid/ask hesaplamasını yapar
-     * @param pf1UsdTry platform 1 USDTRY Rate nesnesi
-     * @param pf2UsdTry platform 2 USDTRY Rate nesnesi
-     * @param pf1GbpUsd platform 1 GBPUSD Rate nesnesi
-     * @param pf2GbpUsd platform 2 GBPUSD Rate nesnesi
-     * @return hesaplanan GBPTRY Rate nesnesi
-     */
-    public Rate calculateGbpTry(Rate pf1UsdTry, Rate pf2UsdTry, Rate pf1GbpUsd, Rate pf2GbpUsd) {
-        Map<String, Object> ctx = new HashMap<>();
-        ctx.put("calcName", "GBPTRY");
-
-        // For the 'usdMid' part
-        ctx.put("pf1Bid", pf1UsdTry.getFields().getBid());
-        ctx.put("pf1Ask", pf1UsdTry.getFields().getAsk());
-        ctx.put("pf2Bid", pf2UsdTry.getFields().getBid());
-        ctx.put("pf2Ask", pf2UsdTry.getFields().getAsk());
-
-        // GBPUSD part
-        ctx.put("pf1GbpUsdBid", pf1GbpUsd.getFields().getBid());
-        ctx.put("pf1GbpUsdAsk", pf1GbpUsd.getFields().getAsk());
-        ctx.put("pf2GbpUsdBid", pf2GbpUsd.getFields().getBid());
-        ctx.put("pf2GbpUsdAsk", pf2GbpUsd.getFields().getAsk());
-
-        double[] result = DynamicFormulaService.calculate(ctx);
-        double bid = result[0];
-        double ask = result[1];
-
-        Rate rate = new Rate("GBPTRY",
-                new RateFields(bid, ask, System.currentTimeMillis()),
-                new RateStatus(true, true));
-        logger.debug("Calculated GBPTRY => bid={}, ask={}", bid, ask);
-        return rate;
+        return calculated;
     }
 
 }

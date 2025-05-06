@@ -106,7 +106,7 @@ public class TCPProvider implements IProvider {
             }
             updateRateStatusForAll(false);
         } catch (Exception e) {
-            logger.error("❌ TCP disconnect error => {}", e.getMessage(), e);
+            logger.error("❌ TCP disconnect error => {}", e.getMessage());
         }
     }
 
@@ -129,7 +129,7 @@ public class TCPProvider implements IProvider {
             subscriptions.add(rateName);
             logger.info("✅ Subscribed to {} on {}", rateName, platformName);
         } catch (Exception e) {
-            logger.error("❌ subscribe error => {}", e.getMessage(), e);
+            logger.error("❌ subscribe error => {}", e.getMessage());
         }
     }
 
@@ -153,7 +153,7 @@ public class TCPProvider implements IProvider {
             subscriptions.remove(rateName);
             logger.info("✅ Unsubscribed from {} on {}", rateName, platformName);
         } catch (Exception e) {
-            logger.error("❌ unSubscribe error => {}", e.getMessage(), e);
+            logger.error("❌ unSubscribe error => {}", e.getMessage());
         }
     }
 
@@ -182,7 +182,7 @@ public class TCPProvider implements IProvider {
                     logger.info("📩 TCP Received: {}", line);
                     parseAndCallback(line);
                 } catch (Exception e) {
-                    logger.error("❌ TCP read error => {}", e.getMessage(), e);
+                    logger.error("❌ TCP read error => {}", e.getMessage());
                     break;
                 }
             }
@@ -204,7 +204,7 @@ public class TCPProvider implements IProvider {
                 socket.close();
             }
         } catch (Exception e) {
-            logger.error("Error closing socket during reconnect: {}", e.getMessage(), e);
+            logger.error("Error closing socket during reconnect: {}", e.getMessage());
         }
         while (autoReconnect && !running) {
             try {

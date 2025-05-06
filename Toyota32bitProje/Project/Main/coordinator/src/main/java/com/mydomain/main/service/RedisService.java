@@ -100,10 +100,10 @@ public class RedisService {
             String rateJson = objectMapper.writeValueAsString(rate);
             jedis.set(prefix + rateName, rateJson);
         } catch (JedisConnectionException jce) {
-            logger.error("Error saving rate {} to Redis with prefix {}: {}", rateName, prefix, jce.getMessage(), jce);
+            logger.error("Error saving rate {} to Redis with prefix {}: {}", rateName, prefix, jce.getMessage());
             connect(); // Hata durumunda yeniden bağlanmayı dene.
         } catch (Exception e) {
-            logger.error("Error saving rate {} to Redis with prefix {}: {}", rateName, prefix, e.getMessage(), e);
+            logger.error("Error saving rate {} to Redis with prefix {}: {}", rateName, prefix, e.getMessage());
         }
     }
 
