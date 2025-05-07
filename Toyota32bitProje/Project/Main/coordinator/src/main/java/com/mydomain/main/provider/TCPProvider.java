@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -37,13 +38,15 @@ public class TCPProvider implements IProvider {
     private BufferedReader reader;
     private OutputStream writer;
 
-    private volatile boolean running = false;
-    private volatile boolean autoReconnect = true;
+    /** Bağlantı durumu bayrağı (thread-safe) */
+    private final AtomicBoolean running       = new AtomicBoolean(false);
+    /** Otomatik yeniden bağlanma bayrağı (thread-safe) */
+    private final AtomicBoolean autoReconnect = new AtomicBoolean(true);
 
-    private final Set<String> subscriptions = Collections.synchronizedSet(new HashSet<>());
-
-    // Daha önce gördüğümüz rateName’leri tutar
-    private final Set<String> seenRates = Collections.synchronizedSet(new HashSet<>());
+    /** Abonelikler (lock-free okuma/yazma) */
+    private final Set<String> subscriptions = new CopyOnWriteArraySet<>();
+    /** Daha önce gördüğümüz rateName’ler (ilk geliş vs. güncelleme) */
+    private final Set<String> seenRates     = new CopyOnWriteArraySet<>();
 
     public TCPProvider() {
         // Reflection kullanımı için boş yapıcı
@@ -59,7 +62,7 @@ public class TCPProvider implements IProvider {
     @Override
     public void connect(String platformName, Map<String, String> params) {
         this.platformName = platformName;
-        autoReconnect = true;
+        this.autoReconnect.set(true);
 
         if (params.containsKey("host")) {
             this.host = params.get("host");
@@ -73,7 +76,8 @@ public class TCPProvider implements IProvider {
             socket = new Socket(host, port);
             reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             writer = socket.getOutputStream();
-            running = true;
+            running.set(true);
+
             if (coordinator != null) {
                 coordinator.onConnect(platformName, true);
             }
@@ -81,9 +85,9 @@ public class TCPProvider implements IProvider {
             listenForData();
         } catch (Exception e) {
             logger.error("❌ TCP connect error => {}", e.getMessage());
-            running = false;
+            running.set(false);
             updateRateStatusForAll(false);
-            if (autoReconnect) {
+            if (autoReconnect.get()) {
                 reconnect();
             }
         }
@@ -98,8 +102,8 @@ public class TCPProvider implements IProvider {
      */
     @Override
     public void disConnect(String platformName, Map<String, String> params) {
-        autoReconnect = false;
-        running = false;
+        autoReconnect.set(false);
+        running.set(false);
         try {
             if (socket != null && !socket.isClosed()) {
                 socket.close();
@@ -123,7 +127,7 @@ public class TCPProvider implements IProvider {
     @Override
     public void subscribe(String platformName, String rateName) {
         try {
-            if (!running) {
+            if (!running.get()) {
                 throw new IllegalStateException("Not connected to TCP server.");
             }
             String cmd = "subscribe|" + rateName + "\n";
@@ -175,7 +179,7 @@ public class TCPProvider implements IProvider {
      */
     private void listenForData() {
         new Thread(() -> {
-            while (running) {
+            while (running.get()) {
                 try {
                     String line = reader.readLine();
                     if (line == null) {
@@ -189,7 +193,7 @@ public class TCPProvider implements IProvider {
                     break;
                 }
             }
-            if (autoReconnect) {
+            if (autoReconnect.get()) {
                 updateRateStatusForAll(false);
                 logger.info("Connection lost. Attempting to reconnect...");
                 reconnect();
@@ -201,7 +205,7 @@ public class TCPProvider implements IProvider {
      * Bağlantı koptuğunda tekrar bağlanmayı deneyen döngüyü çalıştırır.
      */
     private void reconnect() {
-        running = false;
+        running.set(false);
         try {
             if (socket != null && !socket.isClosed()) {
                 socket.close();
@@ -209,13 +213,13 @@ public class TCPProvider implements IProvider {
         } catch (Exception e) {
             logger.error("Error closing socket during reconnect: {}", e.getMessage());
         }
-        while (autoReconnect && !running) {
+        while (autoReconnect.get() && !running.get()) {
             try {
                 logger.info("🔄 Reconnecting to {}:{}", host, port);
                 socket = new Socket(host, port);
                 reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 writer = socket.getOutputStream();
-                running = true;
+                running.set(true);
                 logger.info("🟢 Reconnected to {}:{}", host, port);
                 if (coordinator != null) {
                     coordinator.onConnect(platformName, true);
@@ -243,11 +247,9 @@ public class TCPProvider implements IProvider {
      * @param value Bağlantı aktifse true, pasifse false
      */
     private void updateRateStatusForAll(boolean value) {
+        if (coordinator == null) return;
         for (String rateName : subscriptions) {
-            if (coordinator != null) {
-                RateStatus status = new RateStatus(value, value);
-                coordinator.onRateStatus(platformName, rateName, status);
-            }
+            coordinator.onRateStatus(platformName, rateName, new RateStatus(value, value));
         }
     }
 
