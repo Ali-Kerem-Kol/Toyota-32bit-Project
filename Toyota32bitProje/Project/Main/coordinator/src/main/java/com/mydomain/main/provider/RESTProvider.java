@@ -40,6 +40,9 @@ public class RESTProvider implements IProvider {
     // Abone olunan rateName listesi
     private final Set<String> subscribedRates = new CopyOnWriteArraySet<>();
 
+    // İlk defa gördüğümüz rateName’leri tutacak set
+    private final Set<String> seenRates = new CopyOnWriteArraySet<>();
+
     // Jackson ObjectMapper => JSON parse
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -249,8 +252,12 @@ public class RESTProvider implements IProvider {
             Rate rate = new Rate(rName, fields, status);
 
             if (coordinator != null) {
-                coordinator.onRateAvailable(platformName, rName, rate);
-                coordinator.onRateUpdate(platformName, rName, fields);
+                // Eğer bu rateName ilk kez geliyorsa
+                if (seenRates.add(rName)) {
+                    coordinator.onRateAvailable(platformName, rName, rate);
+                } else {
+                    coordinator.onRateUpdate(platformName, rName, fields);
+                }
             }
             return rate;
         } catch (Exception e) {

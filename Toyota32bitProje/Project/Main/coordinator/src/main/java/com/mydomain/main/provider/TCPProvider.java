@@ -42,6 +42,9 @@ public class TCPProvider implements IProvider {
 
     private final Set<String> subscriptions = Collections.synchronizedSet(new HashSet<>());
 
+    // Daha önce gördüğümüz rateName’leri tutar
+    private final Set<String> seenRates = Collections.synchronizedSet(new HashSet<>());
+
     public TCPProvider() {
         // Reflection kullanımı için boş yapıcı
     }
@@ -273,8 +276,12 @@ public class TCPProvider implements IProvider {
         Rate rate = new Rate(rateName, fields, status);
 
         if (coordinator != null) {
-            coordinator.onRateAvailable(platformName, rateName, rate);
-            coordinator.onRateUpdate(platformName, rateName, fields);
+            // Eğer ilk defa bu rateName’i işliyorsak
+            if (seenRates.add(rateName)) {
+                coordinator.onRateAvailable(platformName, rateName, rate);
+            } else {
+                coordinator.onRateUpdate(platformName, rateName, fields);
+            }
         }
     }
 
