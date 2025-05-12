@@ -54,47 +54,8 @@ public class ConfigReader {
         }
     }
 
-    /**
-     * Kafka ayarlarını içeren JSON nesnesini döner.
-     *
-     * @return Kafka konfigürasyon nesnesi
-     * @throws ConfigLoadException Kafka nesnesi eksikse fırlatılır
-     */
-    private static JSONObject getKafkaObject() {
-        if (!config.has("kafka")) {
-            logger.error("Missing 'kafka' object in config.json!");
-            throw new ConfigLoadException("Missing 'kafka' object in config.json!");
-        }
-        return config.getJSONObject("kafka");
-    }
 
-    /**
-     * Redis ayarlarını içeren JSON nesnesini döner.
-     *
-     * @return Redis konfigürasyon nesnesi
-     * @throws ConfigLoadException Redis nesnesi eksikse fırlatılır
-     */
-    private static JSONObject getRedisObject() {
-        if (!config.has("redis")) {
-            logger.error("Missing 'redis' object in config.json!");
-            throw new ConfigLoadException("Missing 'redis' object in config.json!");
-        }
-        return config.getJSONObject("redis");
-    }
-
-    /**
-     * Calculation (hesaplama) ayarlarını içeren JSON nesnesini döner.
-     *
-     * @return Calculation konfigürasyon nesnesi
-     * @throws ConfigLoadException Calculation nesnesi eksikse fırlatılır
-     */
-    private static JSONObject getCalculationObject() {
-        if (!config.has("calculation")) {
-            logger.error("Missing 'calculation' object in config.json!");
-            throw new ConfigLoadException("Missing 'calculation' object in config.json!");
-        }
-        return config.getJSONObject("calculation");
-    }
+    // Providers
 
     /**
      * config.json içindeki "providers" dizisini döner.
@@ -159,6 +120,22 @@ public class ConfigReader {
         return shortRateSet;
     }
 
+    // Kafka
+
+    /**
+     * Kafka ayarlarını içeren JSON nesnesini döner.
+     *
+     * @return Kafka konfigürasyon nesnesi
+     * @throws ConfigLoadException Kafka nesnesi eksikse fırlatılır
+     */
+    private static JSONObject getKafkaObject() {
+        if (!config.has("kafka")) {
+            logger.error("Missing 'kafka' object in config.json!");
+            throw new ConfigLoadException("Missing 'kafka' object in config.json!");
+        }
+        return config.getJSONObject("kafka");
+    }
+
     /**
      * Kafka bootstrap sunucu adreslerini döner.
      *
@@ -195,6 +172,41 @@ public class ConfigReader {
         return getKafkaObject().getInt("retries");
     }
 
+    public static int getKafkaDeliveryTimeout() {
+        // yoksa varsayılan 30000 ms döner
+        return getKafkaObject().optInt("deliveryTimeoutMs", 30_000);
+    }
+
+    public static int getKafkaRequestTimeout() {
+        // yoksa varsayılan 15000 ms
+        return getKafkaObject().optInt("requestTimeoutMs", 15_000);
+    }
+
+    public static long getKafkaReinitPeriod() {
+        // yoksa varsayılan 5 sn
+        return getKafkaObject().optLong("reinitPeriodSec", 5L);
+    }
+
+    public static int getKafkaLingerMs() {
+        return getKafkaObject().optInt("lingerMs", 0);   // 0 => hemen gönder
+    }
+
+    // Hesaplama
+
+    /**
+     * Calculation (hesaplama) ayarlarını içeren JSON nesnesini döner.
+     *
+     * @return Calculation konfigürasyon nesnesi
+     * @throws ConfigLoadException Calculation nesnesi eksikse fırlatılır
+     */
+    private static JSONObject getCalculationObject() {
+        if (!config.has("calculation")) {
+            logger.error("Missing 'calculation' object in config.json!");
+            throw new ConfigLoadException("Missing 'calculation' object in config.json!");
+        }
+        return config.getJSONObject("calculation");
+    }
+
     /**
      * Hesaplama yöntemini döner (örn. "javascript").
      *
@@ -211,6 +223,22 @@ public class ConfigReader {
      */
     public static String getFormulaFilePath() {
         return getCalculationObject().getString("formulaFilePath");
+    }
+
+    // Redis
+
+    /**
+     * Redis ayarlarını içeren JSON nesnesini döner.
+     *
+     * @return Redis konfigürasyon nesnesi
+     * @throws ConfigLoadException Redis nesnesi eksikse fırlatılır
+     */
+    private static JSONObject getRedisObject() {
+        if (!config.has("redis")) {
+            logger.error("Missing 'redis' object in config.json!");
+            throw new ConfigLoadException("Missing 'redis' object in config.json!");
+        }
+        return config.getJSONObject("redis");
     }
 
     /**
@@ -247,6 +275,24 @@ public class ConfigReader {
      */
     public static String getRedisPassword() {
         return getRedisObject().optString("password", "");
+    }
+
+    /**
+     * Redis key’lerinin ne kadar süre sonra otomatik silineceğini (saniye cinsinden) döner.
+     *
+     * @return raw: prefix’li key’ler için TTL (saniye)
+     */
+    public static int getRawTtl() {
+        return getRedisObject().getInt("rawTtl");
+    }
+
+    /**
+     * Redis key’lerinin ne kadar süre sonra otomatik silineceğini (saniye cinsinden) döner.
+     *
+     * @return calculated: prefix’li key’ler için TTL (saniye)
+     */
+    public static int getCalculatedTtl() {
+        return getRedisObject().getInt("calculatedTtl");
     }
 
 }

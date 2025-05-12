@@ -6,264 +6,130 @@ import com.mydomain.main.coordinator.ICoordinator;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
-import com.mydomain.main.service.HttpService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.net.Proxy;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.*;
 
-/**
- * RESTProvider: TCPProvider benzeri sürekli yeniden bağlanma mekanizması.
- * Sunucu kapalıysa, her pollIntervalSeconds süresinde sunucu erişilebilirliğini test edip,
- * erişilemiyorsa tüm rate'lerin durumunu false yapar; erişilebilirse verileri çekip günceller.
- */
-public class RESTProvider implements IProvider {
+public class RESTProvider implements IProvider, AutoCloseable {
 
-    private static final Logger logger = LogManager.getLogger(RESTProvider.class);
+    private static final Logger log = LogManager.getLogger(RESTProvider.class);
 
     private ICoordinator coordinator;
-    private HttpService httpService;
 
     private String platformName;
-    private String restApiUrl;
+    private String baseUrl;
     private String apiKey;
-    private int pollIntervalSeconds = 5;
+    private Duration pollInterval = Duration.ofSeconds(5);
 
-    private Thread pollThread;
-    private AtomicBoolean running = new AtomicBoolean(false);
+    private final Set<String> subs = new CopyOnWriteArraySet<>();
+    private final ScheduledExecutorService scheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "rest-poller");
+                t.setDaemon(true);
+                return t;
+            });
 
-    // Abone olunan rateName listesi
-    private final Set<String> subscribedRates = new CopyOnWriteArraySet<>();
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(3))
+            .build();
 
-    // İlk defa gördüğümüz rateName’leri tutacak set
-    private final Set<String> seenRates = new CopyOnWriteArraySet<>();
-
-    // Jackson ObjectMapper => JSON parse
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper om = new ObjectMapper();
 
     public RESTProvider() {
         // Reflection ile çağrılacak
     }
 
-    /**
-     * Sağlayıcıyı başlatır. restApiUrl, apiKey ve pollInterval parametrelerini alır,
-     * HTTP servisini oluşturur ve polling iş parçacığını başlatır.
-     *
-     * @param platformName Platform adı
-     * @param params       Bağlantı parametreleri (restApiUrl, apiKey, pollInterval)
-     */
+
     @Override
-    public void connect(String platformName, Map<String, String> params) {
-        this.platformName = platformName;
-        logger.info("✅ RESTProvider connect => {}, params: {}", platformName, params);
+    public void connect(String platform, Map<String, String> p) {
+        this.platformName = platform;
+        this.baseUrl      = p.get("restApiUrl");
+        this.apiKey       = p.get("apiKey");
+        if (p.containsKey("pollInterval"))
+            pollInterval = Duration.ofSeconds(Integer.parseInt(p.get("pollInterval")));
 
-        if (coordinator != null) {
-            coordinator.onConnect(platformName, true);
-        }
-        if (params.containsKey("restApiUrl")) {
-            this.restApiUrl = params.get("restApiUrl");
-        }
-        if (params.containsKey("apiKey")) {
-            this.apiKey = params.get("apiKey");
-        }
-        if (params.containsKey("pollInterval")) {
-            this.pollIntervalSeconds = Integer.parseInt(params.get("pollInterval"));
-        }
+        scheduler.scheduleAtFixedRate(this::pollAll, 0,
+                pollInterval.toMillis(), TimeUnit.MILLISECONDS);
 
-        // maxRetries ile ilgili kod tamamen kaldırıldı.
-        Proxy proxy = null; // opsiyonel
-
-        this.httpService = new HttpService(
-                this.apiKey,
-                null,
-                null,
-                true,   // useBearer
-                false,  // useBasic
-                proxy
-        );
-
-        startPollingThread();
+        if (coordinator != null) coordinator.onConnect(platform, true);
+        //log.info("✅ RESTProvider started for {} – interval {} s", platform, pollInterval.getSeconds());
     }
 
-    /**
-     * REST sağlayıcı bağlantısını sonlandırır. Polling iş parçacığını durdurur,
-     * koordinatöre bağlantı kesildi bilgisini gönderir ve tüm abonelikleri pasif duruma getirir.
-     *
-     * @param platformName Platform adı
-     * @param params       Kullanılmayan parametreler
-     */
     @Override
-    public void disConnect(String platformName, Map<String, String> params) {
-        logger.info("✅ Disconnected from REST => {}", platformName);
-        if (coordinator != null) {
-            coordinator.onDisConnect(platformName, true);
-        }
-        running.set(false);
-        if (pollThread != null) {
-            pollThread.interrupt();
-        }
-        // Bağlantı kesildiğinde tüm aboneliklerin durumunu false yapıyoruz.
-        updateRateStatusForAll(false);
+    public void disConnect(String p, Map<String,String> pm) {
+        close();
     }
 
-    /**
-     * Belirtilen kur için abonelik ekler. subscribedRates listesine ekleme yapar.
-     *
-     * @param platformName Platform adı
-     * @param rateName     Abone olunacak kur adı
-     */
     @Override
-    public void subscribe(String platformName, String rateName) {
-        subscribedRates.add(rateName);
-        logger.info("RESTProvider => Subscribed to {} on {}", rateName, platformName);
+    public void subscribe  (String p, String r) {
+        subs.add(r);
     }
 
-    /**
-     * Belirtilen kur aboneliğini kaldırır. subscribedRates listesinden silme yapar.
-     *
-     * @param platformName Platform adı
-     * @param rateName     Abonelikten çıkarılacak kur adı
-     */
     @Override
-    public void unSubscribe(String platformName, String rateName) {
-        subscribedRates.remove(rateName);
-        logger.info("RESTProvider => Unsubscribed from {} on {}", rateName, platformName);
+    public void unSubscribe(String p, String r) {
+        subs.remove(r);
     }
 
-    /**
-     * Koordinatör nesnesini ayarlar. Sağlayıcı bu koordinatöre olay bildirimleri yapar.
-     *
-     * @param coordinator Uygulamanın koordinatörü
-     */
     @Override
-    public void setCoordinator(ICoordinator coordinator) {
-        this.coordinator = coordinator;
+    public void setCoordinator(ICoordinator c)  {
+        coordinator = c;
     }
 
-    /**
-     * Polling döngüsü:
-     * - Eğer subscribedRates boşsa bekler.
-     * - İlk rate üzerinden sunucu erişilebilirliğini test eder;
-     *   erişilemiyorsa uyarı verip tüm rate'lerin durumunu false yapar,
-     *   erişilebilirse tüm rate'lerin durumunu true yapıp verileri çeker.
-     */
-    private void startPollingThread() {
-        running.set(true);
-        pollThread = new Thread(() -> {
-            while (running.get()) {
-                try {
-                    if (subscribedRates.isEmpty()) {
-                        logger.debug("No subscribed rates, waiting...");
-                        Thread.sleep(pollIntervalSeconds * 1000L);
-                        continue;
-                    }
 
-                    boolean serverAvailable = testServerAvailable(subscribedRates.iterator().next());
-                    // Duruma göre tüm rate'lerin status'unu güncelle
-                    updateRateStatusForAll(serverAvailable);
 
-                    if (serverAvailable) {
-                        for (String rateName : subscribedRates) {
-                            fetchRateInternal(rateName);
-                        }
-                    } else {
-                        logger.warn("REST server not reachable. Will retry in {} seconds...", pollIntervalSeconds);
-                    }
+    private void pollAll() {
+        if (subs.isEmpty() || baseUrl == null) return;
 
-                    Thread.sleep(pollIntervalSeconds * 1000L);
-                } catch (InterruptedException ie) {
-                    logger.warn("REST poll thread interrupted => stopping");
-                    break;
-                } catch (Exception e) {
-                    logger.error("REST poll error => {}", e.getMessage());
-                }
-            }
-        }, "RestProviderPollThread-" + platformName);
-
-        pollThread.setDaemon(true);
-        pollThread.start();
+        subs.parallelStream()
+                .forEach(this::fetchOne);
     }
 
-    /**
-     * Test eder: belirtilen rate üzerinden sunucu erişilebilir mi?
-     *
-     * @param rateName Test edilecek kur adı
-     * @return Sunucuya erişilebiliyorsa true, aksi halde false
-     */
-    private boolean testServerAvailable(String rateName) {
+    private void fetchOne(String rateName) {
         try {
-            if (restApiUrl == null) {
-                logger.warn("No restApiUrl => cannot fetch => rateName={}", rateName);
-                return false;
+            HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + "/" + rateName))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .timeout(Duration.ofSeconds(3))
+                    .build();
+
+            String body = http.send(req, HttpResponse.BodyHandlers.ofString()).body();
+            Rate r = parseRate(rateName, body);
+            if (r != null && coordinator != null) {
+                coordinator.onRateUpdate(platformName, r.getRateName(), r.getFields());
             }
-            String url = restApiUrl + "/" + rateName;
-            String jsonResponse = httpService.get(url);
-            logger.info("Successfully fetched {} => server is up!", rateName);
-            return true;
         } catch (Exception e) {
-            logger.debug("Server check failed for rate={}, err={}", rateName, e.toString());
-            return false;
+            log.warn("REST fetch error {} => {}", rateName, e.getMessage());
         }
     }
 
-    /**
-     * Tüm subscribed rate'ler için bağlantı durumuna göre RateStatus günceller.
-     *
-     * @param active Bağlantı etkinse true, değilse false
-     */
-    private void updateRateStatusForAll(boolean active) {
-        for (String rateName : subscribedRates) {
-            if (coordinator != null) {
-                RateStatus status = new RateStatus(active, active);
-                coordinator.onRateStatus(platformName, rateName, status);
-            }
-        }
-    }
-
-    /**
-     * Belirtilen rateName için REST sunucusundan veri çeker,
-     * JSON verisini Rate nesnesine dönüştürür ve koordinatöre bildirir.
-     *
-     * @param rateName Çekilecek kur adı
-     * @return Oluşturulan Rate nesnesi veya hata durumunda null
-     */
-    private Rate fetchRateInternal(String rateName) {
+    private Rate parseRate(String fallback, String json) {
         try {
-            if (restApiUrl == null) {
-                logger.warn("No restApiUrl => cannot fetch => rateName={}", rateName);
-                return null;
-            }
-            String url = restApiUrl + "/" + rateName;
-            String jsonResponse = httpService.get(url);
+            JsonNode n  = om.readTree(json);
+            String rN   = n.path("rateName").asText(fallback);
+            double bid  = n.path("bid").asDouble();
+            double ask  = n.path("ask").asDouble();
+            String iso  = n.path("timestamp").asText(Instant.now().toString());
 
-            JsonNode root = objectMapper.readTree(jsonResponse);
-            String rName = root.path("rateName").asText(rateName);
-            double bid = root.path("bid").asDouble(0.0);
-            double ask = root.path("ask").asDouble(0.0);
-            String isoTime = root.path("timestamp").asText(Instant.now().toString());
-
-            RateFields fields = new RateFields(bid, ask, isoTime);
-            RateStatus status = new RateStatus(true, true);
-            Rate rate = new Rate(rName, fields, status);
-
-            if (coordinator != null) {
-                // Eğer bu rateName ilk kez geliyorsa
-                if (seenRates.add(rName)) {
-                    coordinator.onRateAvailable(platformName, rName, rate);
-                } else {
-                    coordinator.onRateUpdate(platformName, rName, fields);
-                }
-            }
-            return rate;
+            return new Rate(rN, new RateFields(bid, ask, iso),
+                    new RateStatus(true, true)); // status her zaman true/true
         } catch (Exception e) {
-            logger.warn("Error fetching REST for rate={} => {}", rateName, e.getMessage());
-            logger.debug("Stacktrace:", e.getMessage());
+            log.error("JSON parse error {} => {}", fallback, e.getMessage());
             return null;
         }
+    }
+
+    @Override
+    public void close() {
+        scheduler.shutdownNow();
+        if (coordinator != null) coordinator.onDisConnect(platformName, true);
+        //log.info("🛑 RESTProvider stopped for {}", platformName);
     }
 }

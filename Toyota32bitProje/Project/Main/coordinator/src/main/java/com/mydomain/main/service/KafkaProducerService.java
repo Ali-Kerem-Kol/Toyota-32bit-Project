@@ -10,7 +10,6 @@ import org.apache.logging.log4j.Logger;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -19,124 +18,153 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * KafkaProducerService hesaplanan kurları RedisService üzerinden alır
- * ve Kafka topicine asenkron olarak gönderir
- * Kafka producer başlatılamazsa arka planda belirli aralıklarla yeniden başlatma dener
+ * Hesaplanmış oranları Kafka'ya gönderir — self-healing producer.
+ *   • Producer init parametreleri config.json’dan gelir
+ *   • Producer yoksa her reinitPeriodSec saniyede bir yeniden kurulur
+ *   • send() -> callback ile başarı / hata loglanır
+ *   • Hata varsa producer kapatılır; bir sonraki döngüde yeniden kurulur
  */
-public class KafkaProducerService {
+public final class KafkaProducerService {
 
-    private static final Logger logger = LogManager.getLogger(KafkaProducerService.class);
+    private static final Logger log = LogManager.getLogger(KafkaProducerService.class);
 
+    /** Volatile → bütün thread’ler güncel referansı görür. */
     private volatile KafkaProducer<String, String> producer;
+
+    // ------ config’ten gelen değerler ------
     private final String topicName;
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final String bootstrapServers;
     private final String acks;
-    private final int retries;
+    private final int    retries;
+    private final int    deliveryTimeoutMs;
+    private final int    requestTimeoutMs;
+    private final long   reinitPeriodSec;
+
+    private final ScheduledExecutorService scheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "kafka-producer-reinit");
+                t.setDaemon(true);
+                return t;
+            });
 
     private final Set<String> calculatedRateKeys;
-
     private final RedisService redisService;
 
-    /**
-     * KafkaProducerService nesnesini oluşturur ve producer ı başlatmayı dener
-     * @param bootstrapServers Kafka broker adresi (örneğin "localhost:9092")
-     */
+    // ===========================================================================
+    // ctor
+    // ===========================================================================
     public KafkaProducerService(String bootstrapServers, RedisService redisService) {
-        this.bootstrapServers = bootstrapServers;
-        this.redisService = redisService;
 
-        this.topicName = ConfigReader.getKafkaTopicName();
-        this.acks = ConfigReader.getKafkaAcks();
-        this.retries = ConfigReader.getKafkaRetries();
+        // ---- temel config ----
+        this.bootstrapServers  = bootstrapServers;
+        this.redisService      = redisService;
+        this.topicName         = ConfigReader.getKafkaTopicName();
+        this.acks              = ConfigReader.getKafkaAcks();
 
-        // 1) ConfigReader’dan gelen short-rate’leri al
-        Set<String> shortNames = ConfigReader.getSubscribeRatesShort();
+        // ---- gelişmiş ayarlar ----
+        this.retries           = ConfigReader.getKafkaRetries();            // int
+        this.deliveryTimeoutMs = ConfigReader.getKafkaDeliveryTimeout();    // int
+        this.requestTimeoutMs  = ConfigReader.getKafkaRequestTimeout();     // int
+        this.reinitPeriodSec   = ConfigReader.getKafkaReinitPeriod();       // long
 
-        // 2) resultName’leri hesapla (USDTRY, EURTRY, GBPTRY, vs.)
-        this.calculatedRateKeys = shortNames.stream()
-                .map(sn -> {
-                    if (sn.endsWith("USD") && !sn.equals("USDTRY")) {
-                        // EURUSD -> EURTRY, GBPUSD -> GBPTRY, vs.
-                        return sn.substring(0, 3) + "TRY";
-                    } else {
-                        // USDTRY olduğu gibi
-                        return sn;
-                    }
-                })
+        // USDTRY, EURTRY, … gibi result anahtarlarını hazırla
+        calculatedRateKeys = ConfigReader.getSubscribeRatesShort()
+                .stream()
+                .map(sn -> sn.endsWith("USD") && !sn.equals("USDTRY")
+                        ? sn.substring(0, 3) + "TRY"
+                        : sn)
                 .collect(Collectors.toSet());
 
-        initProducer();
-        scheduler.scheduleAtFixedRate(() -> {
-            if (producer == null) {
-                logger.info("Attempting to reinitialize Kafka producer...");
-                initProducer();
-            }
-        }, 5, 5, TimeUnit.SECONDS);
+        initProducer(); // ilk deneme
+
+        // arka planda “producer == null” mı diye bakar ve gerekiyorsa yeniden kurar
+        scheduler.scheduleAtFixedRate(this::ensureProducer,
+                reinitPeriodSec, reinitPeriodSec, TimeUnit.SECONDS);
     }
 
+    // ===========================================================================
+    // Producer lifecycle
+    // ===========================================================================
     private synchronized void initProducer() {
         try {
-            Properties props = new Properties();
-            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-            props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-            props.put(ProducerConfig.ACKS_CONFIG, acks);
-            props.put(ProducerConfig.RETRIES_CONFIG, retries);
-            producer = new KafkaProducer<>(props);
-            logger.info("KafkaProducer successfully created => bootstrap={}, topic={}, acks={}, retries={}",
-                    bootstrapServers, topicName, acks, retries);
+            Properties p = new Properties();
+            p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG   , bootstrapServers);
+            p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+                    StringSerializer.class.getName());
+            p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                    StringSerializer.class.getName());
+
+            // güvenilirlik + timeout
+            p.put(ProducerConfig.ACKS_CONFIG               , acks);
+            p.put(ProducerConfig.RETRIES_CONFIG            , retries);
+            p.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, deliveryTimeoutMs);
+            p.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG , requestTimeoutMs);
+
+            producer = new KafkaProducer<>(p);
+            log.info("KafkaProducer READY  → bootstrap={}, topic={}, acks={}, retries={}, " +
+                            "deliveryTimeoutMs={}, requestTimeoutMs={}",
+                    bootstrapServers, topicName, acks, retries,
+                    deliveryTimeoutMs, requestTimeoutMs);
+
         } catch (Exception e) {
-            logger.error("Failed to create Kafka producer: {}", e.getMessage());
-            //logger.error("Failed to create Kafka producer: {}", e.getMessage(), e);
-            producer = null;
+            log.error("KafkaProducer INIT FAILED: {}", e.toString());
+            producer = null;          // bir sonraki döngüde yeniden denenir
         }
     }
 
-    /**
-     * RedisService üzerinden hesaplanan tüm kurları alır
-     * ve Kafka topicine asenkron olarak gönderir
-     */
+    /** scheduler tarafından çağrılır — producer yoksa yeniden kurar */
+    private void ensureProducer() {
+        if (producer == null) {
+            log.info("Re-initialising Kafka producer…");
+            initProducer();
+        }
+    }
+
+    // ===========================================================================
+    //  Public API
+    // ===========================================================================
+    /** Redis’ten tüm hesaplanmış oranları alır ve Kafka’ya yollar. */
     public void sendCalculatedRatesToKafka() {
-        for (String rateKey : calculatedRateKeys) {
-            Rate calcRate = redisService.getCalculatedRate(rateKey);
-            if (calcRate == null) {
-                logger.warn("Calculated rate '{}' not found.", rateKey);
-                continue;
+        calculatedRateKeys.forEach(key -> {
+            Rate r = redisService.getCalculatedRate(key);
+            if (r != null) {
+                sendRateToKafka(key, r);
             }
-            if (calcRate.getStatus() == null || !calcRate.getStatus().isActive() || !calcRate.getStatus().isUpdated()) {
-                logger.warn("Calculation result '{}' has invalid RateStatus. Kafka message not sent.", rateKey);
-                continue;
-            }
-            sendRateToKafka(rateKey, calcRate);
-        }
+        });
     }
 
-    /**
-     * Tek bir kur mesajını Kafka topicine gönderir
-     * @param calcRateName Gönderilecek kur adı
-     * @param calcRate Gönderilecek Rate nesnesi
-     */
-    private void sendRateToKafka(String calcRateName, Rate calcRate) {
-        double bid = calcRate.getFields().getBid();
-        double ask = calcRate.getFields().getAsk();
-        String isoTimestamp = OffsetDateTime.now(ZoneOffset.UTC)
-                .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-        String message = calcRateName + "|" + bid + "|" + ask + "|" + isoTimestamp;
+    // ===========================================================================
+    //  Internal helpers
+    // ===========================================================================
+    private void sendRateToKafka(String rateName, Rate rate) {
 
         if (producer == null) {
-            logger.error("Kafka producer is not available. Skipping message: {}", message);
+            log.error("Kafka producer NULL  → mesaj atlandı: {}", rateName);
             return;
         }
 
-        ProducerRecord<String, String> record = new ProducerRecord<>(topicName, message);
-        producer.send(record, (metadata, exception) -> {
-            if (exception != null) {
-                logger.error("Failed to send message to Kafka: {}. Error: {}", message, exception.getMessage(), exception);
-                // İsteğe bağlı: Burada yeniden deneme mekanizması eklenebilir.
+        String tsIso = OffsetDateTime.now(ZoneOffset.UTC)
+                .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+
+        String payload = String.format("%s|%f|%f|%s",
+                rateName,
+                rate.getFields().getBid(),
+                rate.getFields().getAsk(),
+                tsIso);
+
+        ProducerRecord<String, String> rec = new ProducerRecord<>(topicName, payload);
+
+        // Her gönderimde callback ile logla ve hata varsa producer'ı resetle
+        producer.send(rec, (meta, ex) -> {
+            if (ex != null) {
+                log.error("Kafka SEND FAIL [{}] → {}", payload, ex.toString());
+
+                // ======= kendini onarma: producer kapat & null yap =========
+                try { producer.close(); } catch (Exception ignore) {}
+                producer = null;  // -> ensureProducer() yeni producer yaratacak
             } else {
-                logger.info("Asynchronously sent to Kafka (topic={}): {} (partition={}, offset={})",
-                        topicName, message, metadata.partition(), metadata.offset());
+                log.info("Kafka OK  ({}-{} @ offset {}) → {}",
+                        meta.topic(), meta.partition(), meta.offset(), payload);
             }
         });
     }

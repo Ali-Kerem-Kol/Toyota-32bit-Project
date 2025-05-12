@@ -57,12 +57,4 @@ public interface ICoordinator {
      */
     void onRateStatus(String platformName, String rateName, RateStatus rateStatus);
 
-    /**
-     * İsteğe bağlı olarak REST sağlayıcısından oranın anlık çekilmesi gerektiğinde çağrılır.
-     *
-     * @param platformName Sağlayıcı platformunun adı
-     * @param rateName     Çekilmek istenen oranın anahtarı
-     * @return Bulunursa Rate nesnesi, bulunamazsa null
-     */
-    Rate fetchRateFromRest(String platformName, String rateName);
 }

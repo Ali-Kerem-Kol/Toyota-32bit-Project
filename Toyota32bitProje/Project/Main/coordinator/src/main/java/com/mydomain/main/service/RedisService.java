@@ -1,6 +1,7 @@
 package com.mydomain.main.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mydomain.main.config.ConfigReader;
 import com.mydomain.main.model.Rate;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -98,7 +99,19 @@ public class RedisService {
     private synchronized void putRateWithPrefix(String prefix, String rateName, Rate rate) {
         try {
             String rateJson = objectMapper.writeValueAsString(rate);
-            jedis.set(prefix + rateName, rateJson);
+
+            int ttlSeconds = 0;
+            if ("raw:".equals(prefix)) {
+                ttlSeconds = ConfigReader.getRawTtl();
+            } else if ("calculated:".equals(prefix)) {
+                ttlSeconds = ConfigReader.getCalculatedTtl();
+            }
+
+            if (ttlSeconds > 0) {
+                jedis.setex(prefix + rateName, ttlSeconds, rateJson);
+            } else {
+                jedis.set(prefix + rateName, rateJson);
+            }
         } catch (JedisConnectionException jce) {
             logger.error("Error saving rate {} to Redis with prefix {}: {}", rateName, prefix, jce.getMessage());
             connect(); // Hata durumunda yeniden bağlanmayı dene.

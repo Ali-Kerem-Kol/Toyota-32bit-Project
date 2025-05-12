@@ -27,16 +27,6 @@ public class HttpService {
 
     private final Proxy proxy;
 
-    /**
-     * HttpService örneğini oluşturur.
-     *
-     * @param apiKey       Bearer token kullanımı için API anahtarı
-     * @param basicUser    Basic Auth kullanıcı adı
-     * @param basicPass    Basic Auth şifresi
-     * @param useBearer    Bearer token ile yetkilendirme kullanılsın mı
-     * @param useBasic     Basic Auth kullanılsın mı
-     * @param proxy        HTTP istekleri için proxy (null ise doğrudan bağlanır)
-     */
     public HttpService(String apiKey, String basicUser, String basicPass, boolean useBearer, boolean useBasic, Proxy proxy) {
         this.apiKey = apiKey;
         this.basicAuthUser = basicUser;

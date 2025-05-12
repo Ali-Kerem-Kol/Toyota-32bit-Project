@@ -9,6 +9,8 @@ import com.mydomain.main.service.KafkaProducerService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.Map;
+
 /**
  * Uygulamanın ana koordinatör sınıfı.
  * <p>
@@ -25,18 +27,12 @@ public class Coordinator implements ICoordinator {
     private final RateCalculatorService rateCalculatorService;
     private final KafkaProducerService kafkaProducerService;
 
-    /**
-     * Coordinator oluşturucusu.
-     *
-     * @param redisService           Ham ve hesaplanmış veriyi depolayan Redis servisi
-     * @param rateCalculatorService  Verileri işleyip yeni oranları hesaplayan servis
-     * @param kafkaProducerService   Hesaplanan oranları Kafka'ya gönderen servis
-     */
     public Coordinator(RedisService redisService, RateCalculatorService rateCalculatorService,KafkaProducerService kafkaProducerService) {
         this.redisService = redisService;
         this.rateCalculatorService = rateCalculatorService;
         this.kafkaProducerService = kafkaProducerService;
     }
+
 
     /**
      * Sağlayıcı ile bağlantı kurulduğunda çağrılır.
@@ -89,13 +85,22 @@ public class Coordinator implements ICoordinator {
     public void onRateUpdate(String platformName, String rateName, RateFields rateFields) {
         try {
             Rate rate = redisService.getRawRate(rateName);
-            if (rate != null) {
-                rate.setFields(rateFields);
-                redisService.putRawRate(rateName, rate);
+
+            if (rate == null) {
+                rate = new Rate(rateName, rateFields, new RateStatus(true, true));
+                onRateAvailable(platformName, rateName, rate);
+                return;           // onRateAvailable içinde zaten hesaplama tetikleniyor
             }
+
+            rate.setFields(rateFields);
+            redisService.putRawRate(rateName, rate);
+
             logger.info("📊 Rate Updated ({}): {} -> {}", platformName, rateName, rateFields);
-            rateCalculatorService.calculateRates();
-            kafkaProducerService.sendCalculatedRatesToKafka();
+
+            Map<String, Rate> results = rateCalculatorService.calculateRates();
+            if (!results.isEmpty()) {
+                kafkaProducerService.sendCalculatedRatesToKafka();
+            }
         } catch (Exception e) {
             logger.error("❌ Error in onRateUpdate: {}", e.getMessage(), e);
         }
@@ -117,20 +122,6 @@ public class Coordinator implements ICoordinator {
             redisService.putRawRate(rateName, rate);
         }
         logger.info("ℹ️ Rate Status Updated ({}): {} -> {}", platformName, rateName, rateStatus);
-    }
-
-    /**
-     * İsteğe bağlı olarak REST sağlayıcısından oran çekmek için stub metot.
-     * Bu minimal örnekte implementasyon yoktur.
-     *
-     * @param platformName Sağlayıcı adı
-     * @param rateName     Çekilecek oran adı
-     * @return Rate nesnesi veya null
-     */
-    @Override
-    public Rate fetchRateFromRest(String platformName, String rateName) {
-        logger.warn("fetchRateFromRest => not implemented in this minimal example. Use direct REST calls if needed.");
-        return null;
     }
 
 }

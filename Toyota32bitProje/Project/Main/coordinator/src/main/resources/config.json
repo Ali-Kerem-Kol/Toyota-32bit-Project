@@ -3,13 +3,19 @@
     "bootstrapServers": "kafka:9092",
     "topicName": "rates-topic",
     "acks": "all",
-    "retries": 3
+    "retries": 3,
+    "deliveryTimeoutMs": 30000,
+    "requestTimeoutMs": 15000,
+    "reinitPeriodSec": 5,
+    "lingerMs": 0
   },
   "redis": {
     "host": "redis",
     "port": 6379,
     "database": 0,
-    "password": ""
+    "password": "",
+    "rawTtl": 10,
+    "calculatedTtl": 10
   },
   "providers": [
     {
