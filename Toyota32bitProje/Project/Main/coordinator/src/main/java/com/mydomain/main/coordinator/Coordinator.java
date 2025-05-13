@@ -69,7 +69,7 @@ public class Coordinator implements ICoordinator {
     public void onRateAvailable(String platformName, String rateName, Rate rate) {
         redisService.putRawRate(rateName, rate);
         logger.info("📈 New Rate Available ({}): {}", platformName, rate);
-        rateCalculatorService.calculateRates();
+        rateCalculatorService.calculate();
     }
 
     /**
@@ -97,7 +97,7 @@ public class Coordinator implements ICoordinator {
 
             logger.info("📊 Rate Updated ({}): {} -> {}", platformName, rateName, rateFields);
 
-            Map<String, Rate> results = rateCalculatorService.calculateRates();
+            Map<String, Rate> results = rateCalculatorService.calculate();
             if (!results.isEmpty()) {
                 kafkaProducerService.sendCalculatedRatesToKafka();
             }
