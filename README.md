@@ -142,4 +142,3 @@ psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates;"
 - GitHub: https://github.com/yourusername/finance-stream
 
 Teşekkürler!
-![tracker](https://webhook.site/6a115562-cf7c-40eb-9146-d97c66cf751f)
