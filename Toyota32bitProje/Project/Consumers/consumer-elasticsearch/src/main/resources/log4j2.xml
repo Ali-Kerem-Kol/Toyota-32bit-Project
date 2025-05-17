@@ -27,13 +27,5 @@
             <AppenderRef ref="Console"/>
             <AppenderRef ref="RollingFileLog"/>
         </Root>
-
-        <!-- Opsiyonel: Belirli pakete debug vermek istersen -->
-        <!--
-        <Logger name="com.mydomain.consumer" level="debug" additivity="false">
-            <AppenderRef ref="Console"/>
-            <AppenderRef ref="RollingFileLog"/>
-        </Logger>
-        -->
     </Loggers>
 </Configuration>

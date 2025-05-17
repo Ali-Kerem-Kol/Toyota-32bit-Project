@@ -1,12 +1,14 @@
 {
   "kafka": {
     "bootstrapServers": "kafka:9092",
-    "groupId": "consumer-elastic-group",
-    "topic": "rates-topic"
+    "topic":            "rates-topic",
+    "groupId":          "ratesConsumerGroup",
+    "autoOffsetReset":  "latest"
   },
   "elasticsearch": {
-    "host": "elasticsearch",
-    "port": 9200,
-    "indexName": "rates-index"
+    "host":   "elasticsearch",
+    "port":   9200,
+    "scheme": "http",
+    "index":  "rates_index"
   }
 }
