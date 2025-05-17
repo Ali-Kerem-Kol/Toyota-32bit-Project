@@ -1,11 +1,40 @@
-FROM openjdk:17-jdk-slim
+########################
+# 1) Build stage
+########################
+FROM maven:3.9.6-eclipse-temurin-17 AS build
+WORKDIR /build
+
+# Maven dependency cache-layer’i için önce pom.xml
+COPY pom.xml .
+RUN mvn -q dependency:go-offline
+
+# Kaynak kodu kopyala ve jar üret
+COPY src ./src
+RUN mvn -q clean package -DskipTests
+
+########################
+# 2) Runtime stage
+########################
+FROM eclipse-temurin:17-jre-alpine
+LABEL maintainer="your-name <you@example.com>"
+
+# Saat dilimi ve küçük tweak’ler
+ENV TZ=Europe/Istanbul \
+    JAVA_OPTS=""
+
+# Uygulama dizini
 WORKDIR /app
 
-COPY target/consumer-elasticsearch.jar app.jar
-COPY src/main/resources/log4j2.xml log4j2.xml
-COPY src/main/resources/config.json config.json
+# Fat-jar’ı kopyala
+COPY --from=build /build/target/consumer-elasticsearch-*.jar app.jar
 
-# Klasörü oluştur
-RUN mkdir -p logs
+# Log dosyası dizini (host’a mount edeceğiz)
+RUN addgroup -S spring && adduser -S spring -G spring \
+ && mkdir /app/logs \
+ && chown spring:spring /app/logs
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+USER spring
+# EXPOSE 8084          # opsyionel Prometheus/actuator portu
+
+# Graceful shutdown ve opsiyonel JVM parametreleri
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]
