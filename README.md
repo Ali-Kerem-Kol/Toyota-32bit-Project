@@ -137,8 +137,6 @@ psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates;"
 ## İletişim
 - Proje Sahibi: Ali Kerem Kol
 
-- E‑posta: ali.kol@example.com
-
-- GitHub: https://github.com/yourusername/finance-stream
+- E‑posta: ali_.kerem@hotmail.com
 
 Teşekkürler!
