@@ -1,90 +1,65 @@
 package com.mydomain.consumer_elasticsearch.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mydomain.consumer_elasticsearch.config.ConfigReader;
 import com.mydomain.consumer_elasticsearch.model.Rate;
-import com.mydomain.consumer_elasticsearch.model.RateFields;
-import com.mydomain.consumer_elasticsearch.model.RateStatus;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.log4j.Log4j2;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Service;
 
-import java.time.Duration;
-import java.util.Collections;
-import java.util.Properties;
+import java.time.Instant;
+import java.util.UUID;
 
+/**
+ * Kafka topic'inden gelen JSON mesajları alır,
+ * Rate nesnesine dönüştürür ve Elasticsearch'e yazar.
+ */
+@Log4j2
+@Service
+@RequiredArgsConstructor
 public class KafkaConsumerService {
 
-    private static final Logger logger = LogManager.getLogger(KafkaConsumerService.class);
+    private final ObjectMapper mapper;
+    private final ElasticSearchService esService;
 
-    private final KafkaConsumer<String, String> consumer;
-    private final ElasticsearchService esService;
-    private volatile boolean running = true;
+    /**
+     * Dinleyici:
+     *  - topic adı config.json'dan okunur
+     *  - key ve value String deserializer kullanıyoruz
+     */
+    @KafkaListener(
+            topics = "#{T(com.mydomain.consumer_elasticsearch.config.ConfigReader).getKafkaTopic()}",
+            groupId = "#{T(com.mydomain.consumer_elasticsearch.config.ConfigReader).getKafkaGroupId()}",
+            containerFactory = "kafkaListenerContainerFactory"
+    )
+    public void consume(ConsumerRecord<String, String> record) {
 
-    public KafkaConsumerService(String bootstrapServers, String groupId, String topic, ElasticsearchService esService) {
-        this.esService = esService;
-
-        // Kafka ayarları
-        Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
-
-        this.consumer = new KafkaConsumer<>(props);
-        this.consumer.subscribe(Collections.singletonList(topic));
-    }
-
-    // Sonsuz döngü ile poll yapacağız,
-    // "running" false olduğunda çıkacağız.
-    public void start() {
-        logger.info("Kafka consumer started... (polling messages)");
-
+        String msg = record.value();
         try {
-            while (running) {
-                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
-                for (ConsumerRecord<String, String> record : records) {
-                    logger.debug("Received message => partition={}, offset={}, value={}",
-                            record.partition(), record.offset(), record.value());
+            Rate rate;
 
-                    Rate rate = parseRate(record.value());
-                    if (rate != null) {
-                        esService.indexRate(rate);
-                    }
-                }
+            if (msg.contains("|")) {                      // ---- PIPE FORMAT ----
+                // PF1_USDTRY|33.60|35.90|2024-12-16T16:07:15.504
+                String[] p = msg.split("\\|");
+                if (p.length != 4) throw new IllegalArgumentException("Bad pipe msg");
+
+                rate = Rate.builder()
+                        .id(UUID.randomUUID())
+                        .name(p[0])
+                        .bid(Double.parseDouble(p[1]))
+                        .ask(Double.parseDouble(p[2]))
+                        .timestamp(Instant.parse(p[3]).toEpochMilli())
+                        .build();
+            } else {                                     // ---- JSON FORMAT ----
+                rate = mapper.readValue(msg, Rate.class);
             }
+
+            esService.indexRate(rate);
+
         } catch (Exception e) {
-            logger.error("Kafka consumer error => {}", e.getMessage(), e);
-        } finally {
-            consumer.close();
-            logger.info("Kafka consumer closed.");
-        }
-    }
-
-    // Uygulamayı kapatırken "running" false olacak
-    public void stop() {
-        logger.info("Stopping KafkaConsumerService...");
-        running = false;
-    }
-
-    private Rate parseRate(String message) {
-        // Örnek format: "USDTRY|19.20|19.22|2025-04-05T12:00:00Z"
-        try {
-            String[] parts = message.split("\\|");
-            String rateName = parts[0];
-            double bid = Double.parseDouble(parts[1]);
-            double ask = Double.parseDouble(parts[2]);
-            String timestamp = parts[3];
-
-            RateFields fields = new RateFields(bid, ask, timestamp);
-            RateStatus status = new RateStatus(true, true);
-            return new Rate(rateName, fields, status);
-        } catch (Exception e) {
-            logger.warn("Failed to parse rate => raw={}", message);
-            return null;
+            log.error("Bad message @ offset {} – {}", record.offset(), e.getMessage());
         }
     }
 }

@@ -1,91 +1,73 @@
 package com.mydomain.consumer_elasticsearch.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mydomain.consumer_elasticsearch.exception.ConfigLoadException;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.json.JSONObject;
+import lombok.extern.log4j.Log4j2;
 
+import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 
 /**
- * ConfigReader, resources içindeki config.json dosyasını okuyarak,
- * Kafka ve Elasticsearch ayarlarını sağlayan metodları sunar.
+ * config.json içeriğini bir kez belleğe alır,
+ * sonra statik getter’larla erişim sağlar.
  */
-public class ConfigReader {
+@Log4j2
+public final class ConfigReader {
 
-    private static final Logger logger = LogManager.getLogger(ConfigReader.class);
-    private static JSONObject config;
+    private static final String CONFIG_FILE = "/config.json";
+    private static final JsonNode root;
 
+    /* Utility sınıf – nesne yaratılmasın */
+    private ConfigReader() {
+    }
+
+    /* static blok: uygulama ayağa kalkarken tek seferde okur */
     static {
-        try {
-            InputStream is = ConfigReader.class.getClassLoader().getResourceAsStream("config.json");
+        ObjectMapper mapper = new ObjectMapper();
+        try (InputStream is = ConfigReader.class.getResourceAsStream(CONFIG_FILE)) {
             if (is == null) {
-                logger.error("config.json not found in resources!");
-                throw new ConfigLoadException("config.json not found in resources!");
+                throw new ConfigLoadException("config.json not found on classpath!", null);
             }
-            String text = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            config = new JSONObject(text);
-            logger.info("Loaded config.json successfully (ConfigReader).");
-
-            if (!config.has("kafka")) {
-                logger.error("Missing 'kafka' object in config.json!");
-                throw new ConfigLoadException("Missing 'kafka' object in config.json!");
-            }
-            if (!config.has("elasticsearch")) {
-                logger.error("Missing 'elasticsearch' object in config.json!");
-                throw new ConfigLoadException("Missing 'elasticsearch' object in config.json!");
-            }
-
-        } catch (ConfigLoadException e) {
-            // Yakalayıp tekrar fırlatıyoruz
-            throw e;
-        } catch (Exception e) {
-            logger.error("Failed to load config.json => {}", e.getMessage(), e);
-            throw new ConfigLoadException("Failed to load/parse config.json", e);
+            root = mapper.readTree(is);
+            log.info("config.json loaded successfully.");
+        } catch (IOException e) {
+            throw new ConfigLoadException("Failed to parse config.json!", e);
         }
     }
 
-    private static JSONObject getKafkaObject() {
-        if (!config.has("kafka")) {
-            throw new ConfigLoadException("Missing 'kafka' object in config.json!");
-        }
-        return config.getJSONObject("kafka");
-    }
-
-    private static JSONObject getEsObject() {
-        if (!config.has("elasticsearch")) {
-            throw new ConfigLoadException("Missing 'elasticsearch' object in config.json!");
-        }
-        return config.getJSONObject("elasticsearch");
-    }
-
-    // ========== Kafka ==========
-
+    /* ---------- Kafka ---------- */
     public static String getKafkaBootstrapServers() {
-        return getKafkaObject().getString("bootstrapServers");
-    }
-
-    public static String getKafkaGroupId() {
-        return getKafkaObject().getString("groupId");
+        return root.at("/kafka/bootstrapServers").asText();
     }
 
     public static String getKafkaTopic() {
-        return getKafkaObject().getString("topic");
+        return root.at("/kafka/topic").asText();
     }
 
-    // ========== Elasticsearch ==========
+    public static String getKafkaGroupId() {
+        return root.at("/kafka/groupId").asText();
+    }
 
+    public static String getAutoOffsetReset() {
+        return root.at("/kafka/autoOffsetReset").asText("latest");
+    }
+
+    /* ---------- Elasticsearch ---------- */
     public static String getEsHost() {
-        return getEsObject().getString("host");
+        return root.at("/elasticsearch/host").asText();
     }
 
     public static int getEsPort() {
-        return getEsObject().getInt("port");
+        return root.at("/elasticsearch/port").asInt(9200);
     }
 
-    public static String getEsIndexName() {
-        return getEsObject().getString("indexName");
+    public static String getEsScheme() {
+        return root.at("/elasticsearch/scheme").asText("http");
+    }
+
+    public static String getEsIndex() {
+        return root.at("/elasticsearch/index").asText("rates_index");
     }
 
 }

@@ -1,78 +1,71 @@
 package com.mydomain.consumer_elasticsearch.config;
 
-import com.mydomain.consumer_elasticsearch.service.ElasticsearchService;
-import com.mydomain.consumer_elasticsearch.service.KafkaConsumerService;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import lombok.extern.log4j.Log4j2;
+import org.apache.http.HttpHost;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.annotation.EnableKafka;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * AppConfig is responsible for initializing the Kafka consumer,
- * Elasticsearch client, and launching the consumer thread.
+ * Tüm altyapı bean’lerini tek noktada tutar:
+ *  - Elasticsearch RestHighLevelClient
+ *  - Kafka ConsumerFactory  & Listener Factory
  */
+@Log4j2
+@Configuration
+@EnableKafka
 public class AppConfig {
 
-    private static final Logger logger = LogManager.getLogger(AppConfig.class);
+    /* ---------- Elasticsearch ---------- */
+    @Bean(destroyMethod = "close")
+    public RestHighLevelClient elasticsearchClient() {
+        log.info("Creating Elasticsearch client at {}://{}:{}",
+                ConfigReader.getEsScheme(),
+                ConfigReader.getEsHost(),
+                ConfigReader.getEsPort());
 
-    private static KafkaConsumerService kafkaConsumerService;
-    private static ElasticsearchService esService;
-    private static Thread consumerThread;
-
-    /**
-     * init() metodu, config.json'dan okunan parametrelerle
-     * ElasticsearchService ve KafkaConsumerService'i kurup başlatır.
-     */
-    public static void init() {
-        logger.info("=== AppConfig init started ===");
-
-        // 1) ElasticsearchService oluştur
-        String esHost = ConfigReader.getEsHost();
-        int esPort = ConfigReader.getEsPort();
-        String esIndex = ConfigReader.getEsIndexName();
-        esService = new ElasticsearchService(esHost, esPort, esIndex);
-        logger.info("ElasticsearchService created => {}:{}", esHost, esPort);
-
-        // 2) KafkaConsumerService oluştur
-        String kafkaBootstrap = ConfigReader.getKafkaBootstrapServers();
-        String groupId = ConfigReader.getKafkaGroupId();
-        String topic = ConfigReader.getKafkaTopic();
-
-        kafkaConsumerService = new KafkaConsumerService(kafkaBootstrap, groupId, topic, esService);
-        logger.info("KafkaConsumerService created => bootstrap={}, groupId={}, topic={}",
-                kafkaBootstrap, groupId, topic);
-
-        // 3) Consumer'ı ayrı bir thread'de başlat
-        consumerThread = new Thread(() -> {
-            logger.info("Consumer thread started...");
-            kafkaConsumerService.start();
-        }, "KafkaConsumerThread");
-        consumerThread.start();
-
-        logger.info("=== AppConfig init completed ===");
+        return new RestHighLevelClient(
+                RestClient.builder(
+                        new HttpHost(
+                                ConfigReader.getEsHost(),
+                                ConfigReader.getEsPort(),
+                                ConfigReader.getEsScheme()
+                        )
+                )
+        );
     }
 
-    /**
-     * Servisleri kapatmak istediğimizde çağıracağımız metot.
-     */
-    public static void shutdown() {
-        logger.info("=== AppConfig shutdown started ===");
-        if (kafkaConsumerService != null) {
-            kafkaConsumerService.stop();
-        }
-        if (consumerThread != null && consumerThread.isAlive()) {
-            try {
-                consumerThread.join(5000);  // max 5 sn bekliyoruz
-            } catch (InterruptedException e) {
-                logger.warn("Interrupted while waiting for consumerThread to finish.");
-            }
-        }
-        if (esService != null) {
-            try {
-                esService.close();
-            } catch (Exception e) {
-                logger.error("Error closing ElasticsearchService => {}", e.getMessage(), e);
-            }
-        }
-        logger.info("=== AppConfig shutdown completed ===");
+    /* ---------- Kafka ---------- */
+    @Bean
+    public ConsumerFactory<String, String> consumerFactory() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, ConfigReader.getKafkaBootstrapServers());
+        props.put(ConsumerConfig.GROUP_ID_CONFIG,          ConfigReader.getKafkaGroupId());
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, ConfigReader.getAutoOffsetReset());
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,   StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        return new DefaultKafkaConsumerFactory<>(props);
     }
 
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
+            ConsumerFactory<String, String> consumerFactory) {
+
+        ConcurrentKafkaListenerContainerFactory<String, String> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        factory.setConcurrency(1);          // istersem arttırabilirim
+        factory.getContainerProperties().setIdleBetweenPolls(0L);
+        return factory;
+    }
 }
