@@ -130,6 +130,26 @@ services:
     networks:
       - app-network
 
+  consumer-elasticsearch:
+    build:
+      context: ./Consumers/consumer-elasticsearch
+      dockerfile: Dockerfile
+    container_name: consumer-elasticsearch
+    depends_on:
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      # JVM bellek sınırı (isteğe bağlı)
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    volumes:
+      # Uygulamanın dönen log dosyalarını host’a al
+      - ./Consumers/consumer-elasticsearch/logs:/app/logs
+    networks:
+      - app-network
+
+
   ####################################################################
   #       Elasticsearch + Kibana + Filebeat (Security enabled)        #
   ####################################################################
