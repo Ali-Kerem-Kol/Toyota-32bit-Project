@@ -1,48 +1,28 @@
 package com.mydomain.consumer_elasticsearch.model;
 
+import lombok.*;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * Kafka’dan gelen döviz kuru mesajını temsil eder
+ * ve Elasticsearch’e JSON olarak indekslenir.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Rate {
-    private String rateName;
-    private RateFields fields;
-    private RateStatus status;
 
-    public Rate() {}
+    private UUID id;
 
-    public Rate(String rateName, RateFields fields, RateStatus status) {
-        this.rateName = rateName;
-        this.fields = fields;
-        this.status = status;
-    }
+    private String name;
 
-    public String getRateName() {
-        return rateName;
-    }
+    private double bid;
 
-    public void setRateName(String rateName) {
-        this.rateName = rateName;
-    }
+    private double ask;
 
-    public RateFields getFields() {
-        return fields;
-    }
+    private long timestamp;
 
-    public void setFields(RateFields fields) {
-        this.fields = fields;
-    }
-
-    public RateStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(RateStatus status) {
-        this.status = status;
-    }
-
-    @Override
-    public String toString() {
-        return "Rate{" +
-                "rateName='" + rateName + '\'' +
-                ", fields=" + fields +
-                ", status=" + status +
-                '}';
-    }
 }
