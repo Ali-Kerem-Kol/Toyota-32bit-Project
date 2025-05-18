@@ -1,9 +1,11 @@
 package com.mydomain.consumer_elasticsearch.config;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.rest_client.RestClientTransport;
 import lombok.extern.log4j.Log4j2;
 import org.apache.http.HttpHost;
 import org.elasticsearch.client.RestClient;
-import org.elasticsearch.client.RestHighLevelClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
@@ -27,23 +29,16 @@ import java.util.Map;
 public class AppConfig {
 
     /* ---------- Elasticsearch ---------- */
-    @Bean(destroyMethod = "close")
-    public RestHighLevelClient elasticsearchClient() {
-        log.info("Creating Elasticsearch client at {}://{}:{}",
-                ConfigReader.getEsScheme(),
-                ConfigReader.getEsHost(),
-                ConfigReader.getEsPort());
-
-        return new RestHighLevelClient(
-                RestClient.builder(
-                        new HttpHost(
-                                ConfigReader.getEsHost(),
-                                ConfigReader.getEsPort(),
-                                ConfigReader.getEsScheme()
-                        )
-                )
+    @Bean
+    public ElasticsearchClient elasticsearchClient() {
+        RestClient lowLevel = RestClient.builder(
+                new HttpHost(ConfigReader.getEsHost(), ConfigReader.getEsPort(), ConfigReader.getEsScheme())
+        ).build();
+        return new ElasticsearchClient(
+                new RestClientTransport(lowLevel, new JacksonJsonpMapper())
         );
     }
+
 
     /* ---------- Kafka ---------- */
     @Bean
