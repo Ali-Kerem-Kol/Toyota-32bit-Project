@@ -2,7 +2,7 @@
   "kafka": {
     "bootstrapServers": "kafka:9092",
     "topic":            "rates-topic",
-    "groupId":          "ratesConsumerGroup",
+    "groupId":          "ratesConsumerGroup-es",
     "autoOffsetReset":  "latest"
   },
   "elasticsearch": {
