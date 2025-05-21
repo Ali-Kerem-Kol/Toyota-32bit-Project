@@ -1,0 +1,51 @@
+
+package com.mydomain.main.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mydomain.main.model.Rate;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.params.XAddParams;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class RedisProducerService {
+
+    private static final Logger log = LogManager.getLogger(RedisProducerService.class);
+
+    private final JedisPool jedisPool;
+    private final ObjectMapper om;
+    private final String streamName;
+    private final long maxStreamLength;
+
+    public RedisProducerService(JedisPool jedisPool,
+                                ObjectMapper om,
+                                String streamName,
+                                long maxStreamLength) {
+        this.jedisPool = jedisPool;
+        this.om = om;
+        this.streamName = streamName;
+        this.maxStreamLength = maxStreamLength;
+    }
+
+    public void publishRate(String rateName, Rate rate) {
+        try (Jedis jedis = jedisPool.getResource()) {
+            Map<String, String> map = new HashMap<>();
+            map.put("name", rateName);
+            map.put("bid", String.valueOf(rate.getFields().getBid()));
+            map.put("ask", String.valueOf(rate.getFields().getAsk()));
+            map.put("ts", String.valueOf(rate.getFields().getTimestamp()));
+
+            jedis.xadd(streamName, new XAddParams()
+                    .approximateTrimming()
+                    .maxLen(maxStreamLength), map);
+
+            log.info("📤 {} stream’e yazıldı: {}", streamName, rateName);
+        } catch (Exception e) {
+            log.error("❌ Stream yazım hatası ({}): {}", streamName, e.getMessage(), e);
+        }
+    }
+}
