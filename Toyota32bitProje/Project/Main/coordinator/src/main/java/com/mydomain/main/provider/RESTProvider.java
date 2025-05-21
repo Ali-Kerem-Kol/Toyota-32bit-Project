@@ -31,6 +31,9 @@ public class RESTProvider implements IProvider, AutoCloseable {
     private Duration pollInterval = Duration.ofSeconds(5);
 
     private final Set<String> subs = new CopyOnWriteArraySet<>();
+
+    private final Set<String> sentOnce = ConcurrentHashMap.newKeySet();
+
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "rest-poller");
@@ -60,7 +63,7 @@ public class RESTProvider implements IProvider, AutoCloseable {
         scheduler.scheduleAtFixedRate(this::pollAll, 0,
                 pollInterval.toMillis(), TimeUnit.MILLISECONDS);
 
-        if (coordinator != null) coordinator.onConnect(platform, true);
+        if (coordinator != null) coordinator.onConnect(platformName, true);
         //log.info("✅ RESTProvider started for {} – interval {} s", platform, pollInterval.getSeconds());
     }
 
@@ -77,6 +80,7 @@ public class RESTProvider implements IProvider, AutoCloseable {
     @Override
     public void unSubscribe(String p, String r) {
         subs.remove(r);
+        sentOnce.remove(r); // unsubscribe edilince sıfırla
     }
 
     @Override
@@ -102,9 +106,15 @@ public class RESTProvider implements IProvider, AutoCloseable {
 
             String body = http.send(req, HttpResponse.BodyHandlers.ofString()).body();
             Rate r = parseRate(rateName, body);
-            if (r != null && coordinator != null) {
+
+            if (r == null || coordinator == null) return;
+
+            if (sentOnce.add(rateName)) {
+                coordinator.onRateAvailable(platformName, r.getRateName(), r);
+            } else {
                 coordinator.onRateUpdate(platformName, r.getRateName(), r.getFields());
             }
+
         } catch (Exception e) {
             log.warn("REST fetch error {} => {}", rateName, e.getMessage());
         }
@@ -129,7 +139,8 @@ public class RESTProvider implements IProvider, AutoCloseable {
     @Override
     public void close() {
         scheduler.shutdownNow();
-        if (coordinator != null) coordinator.onDisConnect(platformName, true);
+        sentOnce.clear(); // tüm kayıtları temizle
+        if (coordinator != null) coordinator.onDisConnect(platformName, false);
         //log.info("🛑 RESTProvider stopped for {}", platformName);
     }
 }

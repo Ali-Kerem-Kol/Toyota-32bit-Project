@@ -3,6 +3,7 @@ package com.mydomain.main.provider;
 import com.mydomain.main.coordinator.ICoordinator;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
+import com.mydomain.main.model.RateStatus;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -15,6 +16,7 @@ import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -47,6 +49,8 @@ public class TCPProvider implements IProvider {
     private final AtomicBoolean autoReconnect = new AtomicBoolean(true);
 
     private final Set<String> subscriptions = new CopyOnWriteArraySet<>();
+
+    private final Set<String> sentOnce = ConcurrentHashMap.newKeySet();
 
 
     public TCPProvider() {
@@ -94,8 +98,10 @@ public class TCPProvider implements IProvider {
     @Override
     public void disConnect(String platform, Map<String, String> p) {
         autoReconnect.set(false);
+        subscriptions.clear();
+        sentOnce.clear(); // abonelikten çıkınca sil
         closeSocket();
-        if (coordinator != null) coordinator.onDisConnect(platformName, true);
+        if (coordinator != null) coordinator.onDisConnect(platformName, false);
     }
     @Override
     public void subscribe  (String plat, String rate) {
@@ -103,7 +109,9 @@ public class TCPProvider implements IProvider {
     }
     @Override
     public void unSubscribe(String plat, String rate) {
-        subscriptions.remove(rate); sendCmd("unsubscribe|" + rate);
+        subscriptions.remove(rate);
+        sendCmd("unsubscribe|" + rate);
+        sentOnce.remove(rate); // abonelikten çıkınca sil
     }
     @Override
     public void setCoordinator(ICoordinator c) {
@@ -153,8 +161,14 @@ public class TCPProvider implements IProvider {
         double ask      = Double.parseDouble(p[2].split(":",3)[2]);
         long   ts       = parseTs(p[3]);
 
-        if (coordinator != null) {
-            coordinator.onRateUpdate(platformName, rateName, new RateFields(bid, ask, ts));
+        if (coordinator == null) return;
+
+        RateFields fields = new RateFields(bid, ask, ts);
+        if (sentOnce.add(rateName)) {
+            Rate r = new Rate(rateName, fields, new RateStatus(true, true));
+            coordinator.onRateAvailable(platformName, rateName, r);
+        } else {
+            coordinator.onRateUpdate(platformName, rateName, fields);
         }
     }
 
