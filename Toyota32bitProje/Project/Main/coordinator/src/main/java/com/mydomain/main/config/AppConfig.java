@@ -1,50 +1,75 @@
+
 package com.mydomain.main.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mydomain.main.coordinator.Coordinator;
 import com.mydomain.main.coordinator.ICoordinator;
 import com.mydomain.main.exception.ProviderConnectionException;
 import com.mydomain.main.exception.ProviderInitializationException;
 import com.mydomain.main.provider.IProvider;
-import com.mydomain.main.service.KafkaProducerService;
-import com.mydomain.main.service.RateCalculatorService;
-import com.mydomain.main.service.RedisService;
+import com.mydomain.main.service.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import redis.clients.jedis.JedisPool;
 
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
-/**
- * Uygulamanın tüm bileşenlerini ayağa kaldırır ve sağlayıcıları
- * (IProvider) dinamik olarak başlatır.
- *
- * Değişiklikler / iyileştirmeler:
- *   • subscribe → connect sırası düzeltildi
- *   • stack-trace’ler tam log’lanıyor
- *   • yardımcı metotlar küçükleştirildi
- */
 public final class AppConfig {
 
     private static final Logger log = LogManager.getLogger(AppConfig.class);
 
-    private AppConfig() {
+    private AppConfig() {}
 
-    }
-
-    /** Ana bootstrap */
     public static ICoordinator init() {
-
         log.info("=== AppConfig init started ===");
 
-        /*Core servisler*/
-        RedisService           redis  = new RedisService(ConfigReader.getRedisHost(), ConfigReader.getRedisPort());
-        RateCalculatorService  calc   = new RateCalculatorService(redis);
-        KafkaProducerService   kafka  = new KafkaProducerService(ConfigReader.getKafkaBootstrapServers(), redis);
-        Coordinator            coord  = new Coordinator(redis, calc, kafka);
+        ObjectMapper mapper = new ObjectMapper();
+        JedisPool jedisPool = new JedisPool(ConfigReader.getRedisHost(), ConfigReader.getRedisPort());
 
-        /*Provider tanımlarını oku*/
+        RedisProducerService rawProducer = new RedisProducerService(
+                jedisPool,
+                mapper,
+                ConfigReader.getRawStreamName(),
+                ConfigReader.getStreamMaxLen()
+        );
+
+        RedisProducerService calcProducer = new RedisProducerService(
+                jedisPool,
+                mapper,
+                ConfigReader.getCalcStreamName(),
+                ConfigReader.getStreamMaxLen()
+        );
+
+        RedisConsumerService rawConsumer = new RedisConsumerService(
+                jedisPool,
+                mapper,
+                ConfigReader.getRawStreamName(),
+                ConfigReader.getRawGroup(),
+                ConfigReader.getRawConsumerName(),
+                ConfigReader.getStreamReadCount(),
+                ConfigReader.getStreamBlockMillis()
+        );
+
+        RedisConsumerService calcConsumer = new RedisConsumerService(
+                jedisPool,
+                mapper,
+                ConfigReader.getCalcStreamName(),
+                ConfigReader.getCalcGroup(),
+                ConfigReader.getCalcConsumerName(),
+                ConfigReader.getStreamReadCount(),
+                ConfigReader.getStreamBlockMillis()
+        );
+
+        RateCalculatorService calc = new RateCalculatorService();
+        KafkaProducerService kafka = new KafkaProducerService(ConfigReader.getKafkaBootstrapServers());
+
+        Coordinator coord = new Coordinator(rawProducer, rawConsumer, calcProducer, calcConsumer, calc, kafka);
+        coord.startStreamConsumerLoop();
+
         JSONArray defs = ConfigReader.getProviders();
 
         for (int i = 0; i < defs.length(); i++) {
@@ -56,22 +81,17 @@ public final class AppConfig {
         return coord;
     }
 
-    /*Bir provider’ı başlatır*/
     private static void startProvider(JSONObject def, ICoordinator coord) {
-
-        String className    = def.getString("className");
+        String className = def.getString("className");
         String platformName = def.optString("platformName", className);
         log.info("Loading provider => {}", className);
 
         IProvider provider = instantiateProvider(className);
         setCoordinator(provider, className, coord);
 
-        Map<String,String> paramMap = buildParamMap(def);
-
-        /* 1) Abonelikleri ÖNCE ekliyoruz (soket henüz yoksa bile) */
+        Map<String, String> paramMap = buildParamMap(def);
         subscribeRatesIfPresent(provider, def, platformName);
 
-        /* 2) Ardından connect (bloklu veya non-bloklu olabilir) */
         try {
             provider.connect(platformName, paramMap);
         } catch (ProviderConnectionException ce) {
@@ -81,7 +101,6 @@ public final class AppConfig {
         }
     }
 
-    /*Reflection helper*/
     private static IProvider instantiateProvider(String fqcn) {
         try {
             return (IProvider) Class.forName(fqcn).getDeclaredConstructor().newInstance();
@@ -91,7 +110,6 @@ public final class AppConfig {
         }
     }
 
-    /*Coordinator inject*/
     private static void setCoordinator(IProvider p, String name, ICoordinator c) {
         try {
             Method m = p.getClass().getMethod("setCoordinator", ICoordinator.class);
@@ -104,9 +122,8 @@ public final class AppConfig {
         }
     }
 
-    /*JSON param -> Map*/
-    private static Map<String,String> buildParamMap(JSONObject obj) {
-        Map<String,String> m = new HashMap<>();
+    private static Map<String, String> buildParamMap(JSONObject obj) {
+        Map<String, String> m = new HashMap<>();
         for (String k : obj.keySet()) {
             if (!"className".equals(k) && !"subscribeRates".equals(k) && !"platformName".equals(k)) {
                 m.put(k, obj.getString(k));
@@ -115,10 +132,8 @@ public final class AppConfig {
         return m;
     }
 
-    /*Abonelikleri uygula*/
     private static void subscribeRatesIfPresent(IProvider p, JSONObject def, String platform) {
         if (!def.has("subscribeRates")) return;
-
         JSONArray arr = def.getJSONArray("subscribeRates");
         for (int i = 0; i < arr.length(); i++) {
             String rate = arr.getString(i);

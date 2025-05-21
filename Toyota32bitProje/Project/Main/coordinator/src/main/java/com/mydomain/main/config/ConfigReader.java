@@ -295,4 +295,35 @@ public class ConfigReader {
         return getRedisObject().getInt("calculatedTtl");
     }
 
+
+    // Stream ayarları
+    public static String getRawStreamName() {
+        return getRedisObject().optString("rawStream", "raw_rates");
+    }
+
+    public static String getCalcStreamName() {
+        return getRedisObject().optString("calculatedStream", "calculated_rates");
+    }
+
+    public static long getStreamMaxLen() {
+        return getRedisObject().optLong("streamMaxLen", 10000);
+    }
+
+    public static String getRawGroup() { return getRedisObject().optString("rawGroup", "raw-group"); }
+    public static String getCalcGroup() { return getRedisObject().optString("calcGroup", "calc-group"); }
+
+    public static String getRawConsumerName() { return getRedisObject().optString("rawConsumer", "raw-consumer"); }
+    public static String getCalcConsumerName() { return getRedisObject().optString("calcConsumer", "calc-consumer"); }
+
+    public static int getStreamReadCount() {
+        return getRedisObject().optInt("streamReadCount", 10);  // varsayılan: 10 kayıt
+    }
+
+    public static int getStreamBlockMillis() {
+        return getRedisObject().optInt("streamBlockMillis", 5000); // varsayılan: 5 saniye
+    }
+
+
+
+
 }

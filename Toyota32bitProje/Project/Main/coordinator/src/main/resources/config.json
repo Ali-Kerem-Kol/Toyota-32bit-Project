@@ -15,7 +15,16 @@
     "database": 0,
     "password": "",
     "rawTtl": 10,
-    "calculatedTtl": 10
+    "calculatedTtl": 10,
+    "rawStream": "raw_rates",
+    "calculatedStream": "calculated_rates",
+    "streamMaxLen": 10000,
+    "rawGroup": "raw_group",
+    "calcGroup": "calc_group",
+    "rawConsumer": "raw_consumer",
+    "calcConsumer": "calc_consumer",
+    "streamReadCount": 10,
+    "streamBlockMillis": 5000
   },
   "providers": [
     {
