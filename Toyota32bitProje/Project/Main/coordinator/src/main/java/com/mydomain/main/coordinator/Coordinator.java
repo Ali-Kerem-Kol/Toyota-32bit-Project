@@ -1,127 +1,106 @@
 package com.mydomain.main.coordinator;
 
-import com.mydomain.main.service.RateCalculatorService;
-import com.mydomain.main.service.RedisService;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
-import com.mydomain.main.service.KafkaProducerService;
+import com.mydomain.main.service.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.List;
 import java.util.Map;
 
-/**
- * Uygulamanın ana koordinatör sınıfı.
- * <p>
- * Veri sağlayıcılarından gelen olayları (connect, disconnect, yeni veri, güncelleme, durum)
- * karşılar; ham veriyi Redis'e kaydeder, hesaplama servisini çalıştırır ve
- * hesaplanan sonuçları Kafka'ya gönderir.
- * </p>
- */
 public class Coordinator implements ICoordinator {
 
     private static final Logger logger = LogManager.getLogger(Coordinator.class);
 
-    private final RedisService redisService;
+    private final RedisProducerService rawProducerService;
+    private final RedisConsumerService rawConsumerService;
+    private final RedisProducerService calculatedProducerService;
+    private final RedisConsumerService calculatedConsumerService;
+
     private final RateCalculatorService rateCalculatorService;
     private final KafkaProducerService kafkaProducerService;
 
-    public Coordinator(RedisService redisService, RateCalculatorService rateCalculatorService,KafkaProducerService kafkaProducerService) {
-        this.redisService = redisService;
+    public Coordinator(
+            RedisProducerService rawProducerService,
+            RedisConsumerService rawConsumerService,
+            RedisProducerService calculatedProducerService,
+            RedisConsumerService calculatedConsumerService,
+            RateCalculatorService rateCalculatorService,
+            KafkaProducerService kafkaProducerService
+    ) {
+        this.rawProducerService = rawProducerService;
+        this.rawConsumerService = rawConsumerService;
+        this.calculatedProducerService = calculatedProducerService;
+        this.calculatedConsumerService = calculatedConsumerService;
         this.rateCalculatorService = rateCalculatorService;
         this.kafkaProducerService = kafkaProducerService;
     }
 
+    @Override
+    public void onRateAvailable(String platformName, String rateName, Rate rate) {
+        rawProducerService.publishRate(rateName, rate);
+        logger.info("📈 New Rate Available ({}): {}", platformName, rate);
+    }
 
-    /**
-     * Sağlayıcı ile bağlantı kurulduğunda çağrılır.
-     *
-     * @param platformName Sağlayıcı adı (örneğin "TCP_PLATFORM")
-     * @param status       Bağlantı durumu (true = bağlı, false = kopuk)
-     */
+    @Override
+    public void onRateUpdate(String platformName, String rateName, RateFields rateFields) {
+        Rate updatedRate = new Rate(rateName, rateFields, new RateStatus(true, true));
+        rawProducerService.publishRate(rateName, updatedRate);
+        logger.info("📊 Rate Updated ({}): {} -> {}", platformName, rateName, rateFields);
+    }
+
     @Override
     public void onConnect(String platformName, Boolean status) {
         logger.info("🔗 {} connection status: {}", platformName, status ? "Connected" : "Disconnected");
     }
 
-    /**
-     * Sağlayıcı bağlantısı kesildiğinde çağrılır.
-     *
-     * @param platformName Sağlayıcı adı
-     * @param status       Çıkış işleminin başarılı olup olmadığı
-     */
     @Override
     public void onDisConnect(String platformName, Boolean status) {
-        logger.info("🔴 {} disconnected.", platformName);
+        logger.info("🔴 {} disconnected", platformName);
     }
 
-    /**
-     * Yeni bir oran verisi ilk defa geldiğinde çağrılır.
-     * Ham veri Redis'e {@code raw:rateName} önekiyle kaydedilir ve
-     * hesaplama servisi tetiklenir.
-     *
-     * @param platformName Sağlayıcı adı
-     * @param rateName     Oran adı (örneğin "PF1_USDTRY")
-     * @param rate         Gelen Rate nesnesi
-     */
-    @Override
-    public void onRateAvailable(String platformName, String rateName, Rate rate) {
-        redisService.putRawRate(rateName, rate);
-        logger.info("📈 New Rate Available ({}): {}", platformName, rate);
-        rateCalculatorService.calculate();
-    }
-
-    /**
-     * Mevcut bir oran güncellendiğinde çağrılır.
-     * Önce Redis'teki ham veri güncellenir, sonra hesaplama servisi
-     * ve Kafka üretici servisi tetiklenir.
-     *
-     * @param platformName Sağlayıcı adı
-     * @param rateName     Oran adı
-     * @param rateFields   Yeni değerleri içeren RateFields nesnesi
-     */
-    @Override
-    public void onRateUpdate(String platformName, String rateName, RateFields rateFields) {
-        try {
-            Rate rate = redisService.getRawRate(rateName);
-
-            if (rate == null) {
-                rate = new Rate(rateName, rateFields, new RateStatus(true, true));
-                onRateAvailable(platformName, rateName, rate);
-                return;           // onRateAvailable içinde zaten hesaplama tetikleniyor
-            }
-
-            rate.setFields(rateFields);
-            redisService.putRawRate(rateName, rate);
-
-            logger.info("📊 Rate Updated ({}): {} -> {}", platformName, rateName, rateFields);
-
-            Map<String, Rate> results = rateCalculatorService.calculate();
-            if (!results.isEmpty()) {
-                kafkaProducerService.sendCalculatedRatesToKafka();
-            }
-        } catch (Exception e) {
-            logger.error("❌ Error in onRateUpdate: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Oran durumu (aktif/pasif) güncellendiğinde çağrılır.
-     * Redis'teki ham veri üzerinde status alanı güncellenir.
-     *
-     * @param platformName Sağlayıcı adı
-     * @param rateName     Oran adı
-     * @param rateStatus   Yeni RateStatus nesnesi
-     */
     @Override
     public void onRateStatus(String platformName, String rateName, RateStatus rateStatus) {
-        Rate rate = redisService.getRawRate(rateName);
-        if (rate != null) {
-            rate.setStatus(rateStatus);
-            redisService.putRawRate(rateName, rate);
-        }
         logger.info("ℹ️ Rate Status Updated ({}): {} -> {}", platformName, rateName, rateStatus);
+    }
+
+    /**
+     * Stream'den veri okuyarak hesaplama ve Kafka gönderim döngüsünü başlatır.
+     * Uygulama açıldığında bir kez çağrılmalıdır.
+     */
+    public void startStreamConsumerLoop() {
+        Thread t = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    // 1. raw_rates stream'den verileri oku ve grupla
+                    Map<String, List<Rate>> groupedRawRates = rawConsumerService.readAndGroupRawRates();
+                    if (groupedRawRates.isEmpty()) continue;
+
+                    // 2. Hesapla
+                    Map<String, Rate> calculatedRates = rateCalculatorService.calculate(groupedRawRates);
+                    if (calculatedRates.isEmpty()) continue;
+
+                    // 3. calculated stream’e yaz
+                    for (Map.Entry<String, Rate> entry : calculatedRates.entrySet()) {
+                        calculatedProducerService.publishRate(entry.getKey(), entry.getValue());
+                    }
+
+                    // 4. calculated stream’den oku ve Kafka’ya gönder
+                    Map<String, Rate> ratesToSend = calculatedConsumerService.readAndGroupCalculatedRates();
+                    if (ratesToSend.isEmpty()) continue;
+
+                    kafkaProducerService.sendCalculatedRatesToKafka(ratesToSend);
+
+                } catch (Exception e) {
+                    logger.error("❌ Error in stream consumer loop: {}", e.getMessage(), e);
+                }
+            }
+        }, "stream-reader-thread");
+
+        t.setDaemon(true);
+        t.start();
     }
 
 }
