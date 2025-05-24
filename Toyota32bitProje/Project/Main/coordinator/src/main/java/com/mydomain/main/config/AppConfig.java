@@ -28,22 +28,22 @@ public final class AppConfig {
         log.info("=== AppConfig init started ===");
 
         // Redis
-        JedisPool JEDIS_POOL = new JedisPool(ConfigReader.getRedisHost(), ConfigReader.getRedisPort());
+        JedisPool jedisPool = new JedisPool(ConfigReader.getRedisHost(), ConfigReader.getRedisPort());
 
         RedisProducerService redisRawProducer = new RedisProducerService(
-                JEDIS_POOL,
+                jedisPool,
                 ConfigReader.getRawStreamName(),
                 ConfigReader.getStreamMaxLen()
         );
 
         RedisProducerService redisCalculatedProducer = new RedisProducerService(
-                JEDIS_POOL,
+                jedisPool,
                 ConfigReader.getCalcStreamName(),
                 ConfigReader.getStreamMaxLen()
         );
 
         RedisConsumerService redisRawConsumer = new RedisConsumerService(
-                JEDIS_POOL,
+                jedisPool,
                 ConfigReader.getRawStreamName(),
                 ConfigReader.getRawGroup(),
                 ConfigReader.getRawConsumerName(),
@@ -52,7 +52,7 @@ public final class AppConfig {
         );
 
         RedisConsumerService redisCalculatedConsumer = new RedisConsumerService(
-                JEDIS_POOL,
+                jedisPool,
                 ConfigReader.getCalcStreamName(),
                 ConfigReader.getCalcGroup(),
                 ConfigReader.getCalcConsumerName(),
