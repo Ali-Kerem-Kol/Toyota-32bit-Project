@@ -1,142 +1,80 @@
-# Finansal Veri Toplama & Hesaplama Projesi
+# Toyota 32bit Project
 
-## Açıklama  
-Bu proje, birden fazla finansal veri sağlayıcıdan (TCP simülatörü, REST API) gerçek zamanlı kur verisi toplayıp  
-1. Ham verileri Redis’e (`raw:` prefix’li)  
-2. Türev hesaplamaları (USDTRY, EURTRY, GBPTRY) yapıp Redis’e (`calculated:` prefix’li)  
-3. Hesaplanan verileri Kafka’ya yayınlayıp  
-4. Spring‑Boot tabanlı bir consumer ile PostgreSQL’e kalıcı olarak yazmayı  
-5. Filebeat→Elasticsearch→Kibana hattıyla logları izlemeyi sağlar.
+Bu proje, finansal veri sağlayıcılardan (REST ve TCP protokolüyle) alınan döviz kuru verilerinin gerçek zamanlı olarak toplanmasını, hesaplanmasını ve Kafka üzerinden dış sistemlere iletilmesini amaçlayan bir mikroservis mimarisi üzerine kuruludur. Uygulama, gelen verileri Redis Stream altyapısıyla yönetir ve kur hesaplamalarını JavaScript ile dinamik olarak gerçekleştiren bir hesaplayıcı modüle sahiptir. Hesaplanan sonuçlar hem Kafka'ya gönderilir hem de ikinci bir Redis Stream üzerinde saklanır.
+
+Sistem, platformlar arası esneklik sağlayarak veri akışındaki kopmaları tolere edebilir ve merkezi koordinatör yapısı sayesinde dağıtık bileşenleri senkronize eder.
 
 ---
 
-## İçindekiler
-- [Projeyi Çalıştırma](#projeyi-%C3%A7al%C4%B1%C5%9Ft%C4%B1rma)  
-- [Bileşenler](#bile%C5%9Fenler)  
-- [Konfigürasyon Dosyaları](#konfig%C3%BCrasyon-dosyalar%C4%B1)  
-- [Kullanım Örnekleri](#kullan%C4%B1m-%C3%B6rnekleri)  
-- [İletişim](#ileti%C5%9Fim)
+## 🛠️ Kullanılan Teknolojiler
+
+- **Java**
+- **Spring Boot**
+- **Redis & Redis Stream**
+- **Apache Kafka**
+- **PostgreSQL**
+- **ElasticSearch**
+- **Docker & Docker Compose**
+- **Log4j2 + Filebeat + Kibana**
 
 ---
 
-## Projeyi Çalıştırma
+## 🧱 Proje Mimarisi
 
-### Gereksinimler
-- Java 17 (OpenJDK 17+)  
-- Maven 3.6+  
-- Docker & Docker Compose  
-- PostgreSQL (locale veya Docker)  
-- Redis (locale veya Docker)  
+![Proje Mimarisi](Toyota32bitProje/Mimari.png)
 
-### Yerelde Maven ile
-Her modülde:
+---
+
+## 🚀 Kurulum
+
+1. **Repository'yi klonlayın:**
+
 ```bash
-cd <modül-dizini>
-mvn clean package
-java -jar target/*.jar
-- TCPServer: port 5000
-
-- RESTServer: port 8081
-
-- Coordinator: Redis → Kafka
-
-- Consumer‑PostgreSQL: Kafka → PostgreSQL
+git clone https://github.com/Ali-Kerem-Kol/Toyota-32bit-Project.git
+cd Toyota-32bit-Project
 ```
 
-### Docker Compose ile Tam Entegrasyon
+2. **Docker ile çalıştırın:**
+
 ```bash
 docker-compose up --build
 ```
-- Zookeeper, Kafka, PostgreSQL, Redis, TCPServer, RESTServer, Coordinator, Consumer, Elasticsearch, Kibana, Filebeat hepsi bir arada.
 
-## Bileşenler
+3. **Gerekli Konfigürasyon Dosyalarını Kontrol Edin:**
 
-### TCP Simülatör
-- Telnet publish/subscribe
+- "config.json" – Hangi kurların hangi platformlardan alınacağı burada belirtilir.
+- "log4j2.xml" – Log yapısı bu dosya üzerinden ayarlanır.
+- "filebeat.yml" – Log'ların Elasticsearch'e aktarımı için yapılandırma.
 
-- subscribe|RATE_NAME, unsubscribe|RATE_NAME
 
-- ConfigReader ile initialRates, publishFrequency, publishCount
 
-### REST API Simülatör
-- Spring Boot, /api/rates/{rateName}
+---
 
-- Authorization: Bearer <apiKey>
+## 📂 Klasör Yapısı
 
-### Coordinator (Ana Uygulama)
-- Dinamik provider yükleme (reflection)
-
-- Redis’e raw & calculated veriler
-
-- RateCalculatorService + DynamicFormulaService (JS engine)
-
-- KafkaProducerService ile Kafka’ya yayın
-
-### Kafka Producer
-- Asenkron edilir, eksikse yeniden init
-
-- sendCalculatedRatesToKafka(...)
-
-### Redis Service
-- Jedis, auto‑reconnect monitor
-
-- putRawRate / getRawRate
-
-- putCalculatedRate / getCalculatedRate
-
-### Rate Calculator
-- calculateUsdTry, calculateEurTry, calculateGbpTry
-
-- Formüller JS dosyasında
-
-### Kafka Consumer (PostgreSQL)
-- Spring Kafka listener → RatesRepository ile tbl_rates tablosuna kayıt
-
-### Filebeat → Elasticsearch → Kibana
-- filebeat.yml ile Coordinator log’larını index’ler
-
-- Kibana Discover ile canlı log
-
-## Konfigürasyon Dosyaları
-- Servers/TCPServer/src/.../config.json
-
-- Servers/RESTServer/src/.../config.json
-
-- Main/coordinator/src/.../config.json
-
-- Consumers/consumer-postgresql/src/.../config.json
-
-- filebeat.yml
-
-- docker-compose.yml
-
-## Kullanım Örnekleri
-- Telnet ile abone olmak
-
-```bash
-telnet localhost 5000
-subscribe|PF1_EURUSD
 ```
-- REST API ile veri çekmek
-
-```bash
-curl -H "Authorization: Bearer 8f5d3c9a-94b0-49d4-87e9-12a5c13e6c7a" \
-     http://localhost:8081/api/rates/PF2_USDTRY
-```
-- Kibana’da log izlemek
-
-```bash
-Tarayıcıda http://localhost:5601
+Toyota32bitProje/
+│
+├── Project/
+│   ├── Consumers/
+│   │   └── consumer-elasticsearch/
+│   │   └── consumer-postgresql/
+│   ├── Main/
+│   │   └── coordinator/
+│   ├── Servers/
+│   │   └── RESTServer
+│   │   └── TCPServer
+│   ├── docker-compose.yml
+│   └── filebeat.yml
+│
+├── Proje Teknik Dokümanı V0.1.docx
+├── Mimari.png
 ```
 
--PostgreSQL’de sonuçları görmek
 
-```bash
-psql -U postgres -d exchange_rates -c "SELECT * FROM tbl_rates;"
-```
-## İletişim
-- Proje Sahibi: Ali Kerem Kol
+---
 
-- E‑posta: ali_.kerem@hotmail.com
 
-Teşekkürler!
+## ✉️ İletişim
+- Proje Sahibi : Ali Kerem Kol
+- E-posta : ali_.kerem@hotmail.com
