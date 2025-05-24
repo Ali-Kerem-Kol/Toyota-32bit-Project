@@ -6,17 +6,14 @@ import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * Hesaplanmış oranları Kafka'ya gönderir — self-healing producer.
@@ -25,10 +22,10 @@ public final class KafkaProducerService {
 
     private static final Logger log = LogManager.getLogger(KafkaProducerService.class);
 
-    private volatile KafkaProducer<String, String> producer;
+    private volatile KafkaProducer<String, String> KAFKA_PRODUCER;
 
-    private final String topicName;
     private final String bootstrapServers;
+    private final String topicName;
     private final String acks;
     private final int retries;
     private final int deliveryTimeoutMs;
@@ -43,8 +40,8 @@ public final class KafkaProducerService {
             });
 
 
-    public KafkaProducerService(String bootstrapServers) {
-        this.bootstrapServers = bootstrapServers;
+    public KafkaProducerService() {
+        this.bootstrapServers = ConfigReader.getKafkaBootstrapServers();
         this.topicName = ConfigReader.getKafkaTopicName();
         this.acks = ConfigReader.getKafkaAcks();
         this.retries = ConfigReader.getKafkaRetries();
@@ -53,43 +50,43 @@ public final class KafkaProducerService {
         this.reinitPeriodSec = ConfigReader.getKafkaReinitPeriod();
 
         initProducer();
-        scheduler.scheduleAtFixedRate(this::ensureProducer, reinitPeriodSec, reinitPeriodSec, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(this::recoverProducerIfClosed, reinitPeriodSec, reinitPeriodSec, TimeUnit.SECONDS);
     }
-
     private synchronized void initProducer() {
         try {
-            Properties p = new Properties();
-            p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-            p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-            p.put(ProducerConfig.ACKS_CONFIG, acks);
-            p.put(ProducerConfig.RETRIES_CONFIG, retries);
-            p.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, deliveryTimeoutMs);
-            p.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, requestTimeoutMs);
+            Properties properties = new Properties();
 
-            producer = new KafkaProducer<>(p);
+            properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+            properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+            properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+            properties.put(ProducerConfig.ACKS_CONFIG, acks);
+            properties.put(ProducerConfig.RETRIES_CONFIG, retries);
+            properties.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, deliveryTimeoutMs);
+            properties.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, requestTimeoutMs);
+
+            KAFKA_PRODUCER = new KafkaProducer<>(properties);
             log.info("KafkaProducer READY  → bootstrap={}, topic={}, acks={}, retries={}, " +
                             "deliveryTimeoutMs={}, requestTimeoutMs={}",
                     bootstrapServers, topicName, acks, retries, deliveryTimeoutMs, requestTimeoutMs);
 
         } catch (Exception e) {
             log.error("KafkaProducer INIT FAILED: {}", e.toString());
-            producer = null;
+            KAFKA_PRODUCER = null;
         }
     }
 
-    private void ensureProducer() {
-        if (producer == null) {
-            log.info("Re-initialising Kafka producer…");
-            initProducer();
-        }
+    private void recoverProducerIfClosed() {
+        if (KAFKA_PRODUCER != null) return;
+
+        log.info("Re-initialising Kafka producer…");
+        initProducer();
     }
 
 
     /**
      * Yeni yöntem: Verilen oranları Kafka’ya yollar.
      */
-    public void sendCalculatedRatesToKafka(Map<String, Rate> rates) {
+    public void sendRatesToKafka(Map<String, Rate> rates) {
         if (rates == null || rates.isEmpty()) {
             log.warn("Kafka gönderimi için boş veri seti alındı.");
             return;
@@ -99,7 +96,7 @@ public final class KafkaProducerService {
     }
 
     private void sendRateToKafka(String rateName, Rate rate) {
-        if (producer == null) {
+        if (KAFKA_PRODUCER == null) {
             log.error("Kafka producer NULL  → mesaj atlandı: {}", rateName);
             return;
         }
@@ -113,13 +110,17 @@ public final class KafkaProducerService {
                 rate.getFields().getAsk(),
                 tsIso);
 
-        ProducerRecord<String, String> rec = new ProducerRecord<>(topicName, payload);
+        ProducerRecord<String, String> producerRecord = new ProducerRecord<>(topicName, payload);
 
-        producer.send(rec, (meta, ex) -> {
+        KAFKA_PRODUCER.send(producerRecord, (meta, ex) -> {
             if (ex != null) {
                 log.error("Kafka SEND FAIL [{}] → {}", payload, ex.toString());
-                try { producer.close(); } catch (Exception ignore) {}
-                producer = null;
+                try {
+                    KAFKA_PRODUCER.close();
+                } catch (Exception ignore) {
+
+                }
+                KAFKA_PRODUCER = null;
             } else {
                 log.info("Kafka OK  ({}-{} @ offset {}) → {}",
                         meta.topic(), meta.partition(), meta.offset(), payload);

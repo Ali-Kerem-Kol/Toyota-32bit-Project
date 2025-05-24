@@ -6,9 +6,7 @@ import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Dışarıdan verilen verilerle hesaplama yapar. Redis bağımlılığı yoktur.
@@ -19,13 +17,10 @@ public class RateCalculatorService {
 
     private static final Logger logger = LogManager.getLogger(RateCalculatorService.class);
 
-    private final Set<String> shortNames;                    // USDTRY, EURUSD, ...
-    private final Map<String, List<String>> fullByShort;     // USDTRY → [PF1_USDTRY, PF2_USDTRY, ...]
+    private final Set<String> shortnames;                    // USDTRY, EURUSD, ...
 
     public RateCalculatorService() {
-        Set<String> full = ConfigReader.getSubscribeRates();
-        this.shortNames  = ConfigReader.getSubscribeRatesShort();
-        this.fullByShort = full.stream().collect(Collectors.groupingBy(fn -> fn.substring(fn.indexOf('_') + 1)));
+        this.shortnames  = ConfigReader.getSubscribeRatesShort();
     }
 
     /**
@@ -34,14 +29,14 @@ public class RateCalculatorService {
      * @return Hesaplanmış kurlar: resultName → Rate
      */
     public Map<String, Rate> calculate(Map<String, List<Rate>> groupedRates) {
-        if (!groupedRates.containsKey("USDTRY") || groupedRates.get("USDTRY").isEmpty()) {
+        if (!groupedRates.containsKey("USDTRY") || groupedRates.get("USDTRY").isEmpty() || groupedRates.isEmpty()) {
             logger.warn("❌ Hiç USDTRY verisi yok; hesaplama atlandı.");
             return Collections.emptyMap();
         }
 
-        Map<String, Rate> calculated = new HashMap<>();
+        Map<String, Rate> calculatedRates = new HashMap<>();
 
-        for (String shortName : shortNames) {
+        for (String shortName : shortnames) {
             if (!groupedRates.containsKey(shortName) && !shortName.equals("USDTRY")) {
                 logger.warn("💡 {} verisi yok; atlanıyor.", shortName);
                 continue;
@@ -49,7 +44,7 @@ public class RateCalculatorService {
 
             try {
                 Rate calc = compute(shortName, groupedRates);
-                calculated.put(calc.getRateName(), calc);
+                calculatedRates.put(calc.getRateName(), calc);
 
                 logger.info("🔹 {} => bid={}, ask={}",
                         calc.getRateName(),
@@ -60,7 +55,7 @@ public class RateCalculatorService {
             }
         }
 
-        return calculated;
+        return calculatedRates;
     }
 
     /**

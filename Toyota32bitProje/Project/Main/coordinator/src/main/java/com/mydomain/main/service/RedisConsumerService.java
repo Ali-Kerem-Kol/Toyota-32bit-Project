@@ -1,7 +1,5 @@
-
 package com.mydomain.main.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
@@ -10,7 +8,6 @@ import org.apache.logging.log4j.Logger;
 import redis.clients.jedis.*;
 import redis.clients.jedis.params.XReadGroupParams;
 import redis.clients.jedis.resps.StreamEntry;
-
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -19,22 +16,20 @@ public class RedisConsumerService {
     private static final Logger log = LogManager.getLogger(RedisConsumerService.class);
 
     private final JedisPool jedisPool;
-    private final ObjectMapper objectMapper;
     private final String streamName;
     private final String groupName;
     private final String consumerName;
     private final int readCount;
     private final int blockMillis;
 
+
     public RedisConsumerService(JedisPool jedisPool,
-                                ObjectMapper objectMapper,
                                 String streamName,
                                 String groupName,
                                 String consumerName,
                                 int readCount,
                                 int blockMillis) {
         this.jedisPool = jedisPool;
-        this.objectMapper = objectMapper;
         this.streamName = streamName;
         this.groupName = groupName;
         this.consumerName = consumerName;
@@ -94,25 +89,26 @@ public class RedisConsumerService {
             String name = map.get("name");
             double bid = Double.parseDouble(map.get("bid"));
             double ask = Double.parseDouble(map.get("ask"));
-            long ts;
-            String tsValue = map.get("ts");
-
-            try {
-                ts = Long.parseLong(tsValue);
-            } catch (NumberFormatException e) {
-                // ISO formatı geldiyse UTC'ye göre epoch millis'e çevir
-                ts = OffsetDateTime.parse(tsValue).toInstant().toEpochMilli();
-            }
-
+            long ts = parseTimestamp(map.get("ts"));
 
             return new Rate(name, new RateFields(bid, ask, ts), new RateStatus(true, true));
         } catch (Exception e) {
-            log.error("parseStreamEntry error: {}", e.getMessage());
+            log.error("parseStreamEntry error: {}", e.getMessage(), e);
             return null;
         }
     }
 
-    public Map<String, List<Rate>> readAndGroupRawRates() {
+    private long parseTimestamp(String tsValue) {
+        try {
+            return Long.parseLong(tsValue);
+        } catch (NumberFormatException e) {
+            // ISO formatı geldiyse UTC'ye göre epoch millis'e çevir
+            return OffsetDateTime.parse(tsValue).toInstant().toEpochMilli();
+        }
+    }
+
+
+    public Map<String, List<Rate>> readAndGroupRatesByShortName() {
         Map<String, List<Rate>> groupedRates = new HashMap<>();
         List<StreamEntry> entries = readStreamEntries();
         for (StreamEntry entry : entries) {
@@ -126,7 +122,7 @@ public class RedisConsumerService {
         return groupedRates;
     }
 
-    public Map<String, Rate> readAndGroupCalculatedRates() {
+    public Map<String, Rate> readRatesAsMap() {
         Map<String, Rate> calculatedRates = new HashMap<>();
         List<StreamEntry> entries = readStreamEntries();
         for (StreamEntry entry : entries) {

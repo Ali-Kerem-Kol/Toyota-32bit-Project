@@ -18,22 +18,22 @@ public class HttpService {
 
     private static final Logger logger = LogManager.getLogger(HttpService.class);
 
-    private final String apiKey;
-    private final String basicAuthUser;
-    private final String basicAuthPass;
+    private final String APIKEY;
+    private final String BASIC_AUTH_USER;
+    private final String BASIC_AUTH_PASSWORD;
 
-    private final boolean useBearerToken;
-    private final boolean useBasicAuth;
+    private final boolean USE_BEARER_TOKEN;
+    private final boolean USE_BASIC_AUTH;
 
-    private final Proxy proxy;
+    private final Proxy PROXY;
 
     public HttpService(String apiKey, String basicUser, String basicPass, boolean useBearer, boolean useBasic, Proxy proxy) {
-        this.apiKey = apiKey;
-        this.basicAuthUser = basicUser;
-        this.basicAuthPass = basicPass;
-        this.useBearerToken = useBearer;
-        this.useBasicAuth = useBasic;
-        this.proxy = proxy;
+        this.APIKEY = apiKey;
+        this.BASIC_AUTH_USER = basicUser;
+        this.BASIC_AUTH_PASSWORD = basicPass;
+        this.USE_BEARER_TOKEN = useBearer;
+        this.USE_BASIC_AUTH = useBasic;
+        this.PROXY = proxy;
     }
 
 
@@ -76,19 +76,19 @@ public class HttpService {
      */
     private HttpURLConnection openConnection(String urlStr) throws Exception {
         URL url = new URL(urlStr);
-        HttpURLConnection conn = (HttpURLConnection) (proxy == null
+        HttpURLConnection conn = (HttpURLConnection) (PROXY == null
                 ? url.openConnection()
-                : url.openConnection(proxy));
+                : url.openConnection(PROXY));
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(5000);
         conn.setReadTimeout(5000);
-        if (useBasicAuth && basicAuthUser != null && basicAuthPass != null) {
-            String credentials = basicAuthUser + ":" + basicAuthPass;
+        if (USE_BASIC_AUTH && BASIC_AUTH_USER != null && BASIC_AUTH_PASSWORD != null) {
+            String credentials = BASIC_AUTH_USER + ":" + BASIC_AUTH_PASSWORD;
             String encoded = Base64.getEncoder().encodeToString(credentials.getBytes());
             conn.setRequestProperty("Authorization", "Basic " + encoded);
         }
-        if (useBearerToken && apiKey != null) {
-            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+        if (USE_BEARER_TOKEN && APIKEY != null) {
+            conn.setRequestProperty("Authorization", "Bearer " + APIKEY);
         }
         return conn;
     }

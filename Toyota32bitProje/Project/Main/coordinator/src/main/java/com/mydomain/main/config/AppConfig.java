@@ -27,26 +27,23 @@ public final class AppConfig {
     public static ICoordinator init() {
         log.info("=== AppConfig init started ===");
 
-        ObjectMapper mapper = new ObjectMapper();
-        JedisPool jedisPool = new JedisPool(ConfigReader.getRedisHost(), ConfigReader.getRedisPort());
+        // Redis
+        JedisPool JEDIS_POOL = new JedisPool(ConfigReader.getRedisHost(), ConfigReader.getRedisPort());
 
-        RedisProducerService rawProducer = new RedisProducerService(
-                jedisPool,
-                mapper,
+        RedisProducerService redisRawProducer = new RedisProducerService(
+                JEDIS_POOL,
                 ConfigReader.getRawStreamName(),
                 ConfigReader.getStreamMaxLen()
         );
 
-        RedisProducerService calcProducer = new RedisProducerService(
-                jedisPool,
-                mapper,
+        RedisProducerService redisCalculatedProducer = new RedisProducerService(
+                JEDIS_POOL,
                 ConfigReader.getCalcStreamName(),
                 ConfigReader.getStreamMaxLen()
         );
 
-        RedisConsumerService rawConsumer = new RedisConsumerService(
-                jedisPool,
-                mapper,
+        RedisConsumerService redisRawConsumer = new RedisConsumerService(
+                JEDIS_POOL,
                 ConfigReader.getRawStreamName(),
                 ConfigReader.getRawGroup(),
                 ConfigReader.getRawConsumerName(),
@@ -54,9 +51,8 @@ public final class AppConfig {
                 ConfigReader.getStreamBlockMillis()
         );
 
-        RedisConsumerService calcConsumer = new RedisConsumerService(
-                jedisPool,
-                mapper,
+        RedisConsumerService redisCalculatedConsumer = new RedisConsumerService(
+                JEDIS_POOL,
                 ConfigReader.getCalcStreamName(),
                 ConfigReader.getCalcGroup(),
                 ConfigReader.getCalcConsumerName(),
@@ -64,30 +60,34 @@ public final class AppConfig {
                 ConfigReader.getStreamBlockMillis()
         );
 
-        RateCalculatorService calc = new RateCalculatorService();
-        KafkaProducerService kafka = new KafkaProducerService(ConfigReader.getKafkaBootstrapServers());
+        // RateCalculatorService
+        RateCalculatorService rateCalculatorService = new RateCalculatorService();
 
-        Coordinator coord = new Coordinator(rawProducer, rawConsumer, calcProducer, calcConsumer, calc, kafka);
-        coord.startStreamConsumerLoop();
+        // KafkaProducerService
+        KafkaProducerService kafkaProducerService = new KafkaProducerService();
 
-        JSONArray defs = ConfigReader.getProviders();
+        // Coordinator
+        Coordinator coordinator = new Coordinator(redisRawProducer, redisRawConsumer, redisCalculatedProducer, redisCalculatedConsumer, rateCalculatorService, kafkaProducerService);
+        coordinator.startStreamConsumerLoop();
 
-        for (int i = 0; i < defs.length(); i++) {
-            JSONObject def = defs.getJSONObject(i);
-            Thread t = new Thread(() -> startProvider(def, coord), "ProviderThread-" + i);
+        JSONArray PROVIDERS = ConfigReader.getProviders();
+
+        for (int i = 0; i < PROVIDERS.length(); i++) {
+            JSONObject provider = PROVIDERS.getJSONObject(i);
+            Thread t = new Thread(() -> startProvider(provider, coordinator), "ProviderThread-" + i);
             t.start();
         }
 
-        return coord;
+        return coordinator;
     }
 
-    private static void startProvider(JSONObject def, ICoordinator coord) {
+    private static void startProvider(JSONObject def, ICoordinator coordinator) {
         String className = def.getString("className");
         String platformName = def.optString("platformName", className);
         log.info("Loading provider => {}", className);
 
         IProvider provider = instantiateProvider(className);
-        setCoordinator(provider, className, coord);
+        setCoordinator(provider, className, coordinator);
 
         Map<String, String> paramMap = buildParamMap(def);
         subscribeRatesIfPresent(provider, def, platformName);
@@ -110,10 +110,10 @@ public final class AppConfig {
         }
     }
 
-    private static void setCoordinator(IProvider p, String name, ICoordinator c) {
+    private static void setCoordinator(IProvider provider, String name, ICoordinator coordinator) {
         try {
-            Method m = p.getClass().getMethod("setCoordinator", ICoordinator.class);
-            m.invoke(p, c);
+            Method method = provider.getClass().getMethod("setCoordinator", ICoordinator.class);
+            method.invoke(provider, coordinator);
         } catch (NoSuchMethodException ns) {
             log.warn("{} has no setCoordinator(..) method", name);
         } catch (Exception e) {
@@ -132,13 +132,13 @@ public final class AppConfig {
         return m;
     }
 
-    private static void subscribeRatesIfPresent(IProvider p, JSONObject def, String platform) {
+    private static void subscribeRatesIfPresent(IProvider provider, JSONObject def, String platform) {
         if (!def.has("subscribeRates")) return;
-        JSONArray arr = def.getJSONArray("subscribeRates");
-        for (int i = 0; i < arr.length(); i++) {
-            String rate = arr.getString(i);
+        JSONArray subscribeRates = def.getJSONArray("subscribeRates");
+        for (int i = 0; i < subscribeRates.length(); i++) {
+            String rate = subscribeRates.getString(i);
             try {
-                p.subscribe(platform, rate);
+                provider.subscribe(platform, rate);
             } catch (Exception e) {
                 log.error("subscribe({}) failed for provider {}", rate, def.getString("className"), e);
             }

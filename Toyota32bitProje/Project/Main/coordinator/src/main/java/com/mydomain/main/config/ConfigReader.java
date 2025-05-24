@@ -173,17 +173,14 @@ public class ConfigReader {
     }
 
     public static int getKafkaDeliveryTimeout() {
-        // yoksa varsayılan 30000 ms döner
         return getKafkaObject().optInt("deliveryTimeoutMs", 30_000);
     }
 
     public static int getKafkaRequestTimeout() {
-        // yoksa varsayılan 15000 ms
         return getKafkaObject().optInt("requestTimeoutMs", 15_000);
     }
 
     public static long getKafkaReinitPeriod() {
-        // yoksa varsayılan 5 sn
         return getKafkaObject().optLong("reinitPeriodSec", 5L);
     }
 
@@ -310,9 +307,11 @@ public class ConfigReader {
     }
 
     public static String getRawGroup() { return getRedisObject().optString("rawGroup", "raw-group"); }
+
     public static String getCalcGroup() { return getRedisObject().optString("calcGroup", "calc-group"); }
 
     public static String getRawConsumerName() { return getRedisObject().optString("rawConsumer", "raw-consumer"); }
+
     public static String getCalcConsumerName() { return getRedisObject().optString("calcConsumer", "calc-consumer"); }
 
     public static int getStreamReadCount() {
@@ -322,8 +321,6 @@ public class ConfigReader {
     public static int getStreamBlockMillis() {
         return getRedisObject().optInt("streamBlockMillis", 5000); // varsayılan: 5 saniye
     }
-
-
 
 
 }
