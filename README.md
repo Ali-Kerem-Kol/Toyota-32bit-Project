@@ -57,10 +57,10 @@ Toyota32bitProje/
 │
 ├── Project/
 │   ├── Consumers/
-│   │   └── consumer-elasticsearch/
-│   │   └── consumer-postgresql/
+│   │   └── consumer-elasticsearch
+│   │   └── consumer-postgresql
 │   ├── Main/
-│   │   └── coordinator/
+│   │   └── coordinator
 │   ├── Servers/
 │   │   └── RESTServer
 │   │   └── TCPServer
