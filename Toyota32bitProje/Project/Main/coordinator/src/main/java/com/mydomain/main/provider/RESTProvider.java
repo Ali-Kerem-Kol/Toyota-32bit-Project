@@ -3,12 +3,12 @@ package com.mydomain.main.provider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mydomain.main.coordinator.ICoordinator;
-import com.mydomain.main.model.Rate;
-import com.mydomain.main.model.RateFields;
-import com.mydomain.main.model.RateStatus;
+import com.mydomain.main.model.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.json.JSONObject;
 
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,21 +18,30 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class RESTProvider implements IProvider, AutoCloseable {
 
-    private static final Logger log = LogManager.getLogger(RESTProvider.class);
+    /* ───────── static ───────── */
+    private static final Logger LOG = LogManager.getLogger(RESTProvider.class);
+    private static final String CONFIG_FILE = "rest-config.json";
 
+    /* ───────── wiring ───────── */
     private ICoordinator coordinator;
-
     private String platformName;
+
+    /* bağlantı parametreleri */
     private String baseUrl;
     private String apiKey;
-    private Duration pollInterval = Duration.ofSeconds(5);
+    private Duration pollInterval;
 
-    private final Set<String> subs = new CopyOnWriteArraySet<>();
+    /* ───────── state ───────── */
+    private final Set<String> subscriptions = new CopyOnWriteArraySet<>();
+    private final Set<String> notifiedRates = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean connected   = new AtomicBoolean(false);
 
-    private final Set<String> sentOnce = ConcurrentHashMap.newKeySet();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -41,60 +50,54 @@ public class RESTProvider implements IProvider, AutoCloseable {
                 return t;
             });
 
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(3))
-            .build();
-
-    private final ObjectMapper om = new ObjectMapper();
-
-    public RESTProvider() {
-        // Reflection ile çağrılacak
-    }
-
+    /* ═════ IProvider ═════ */
 
     @Override
-    public void connect(String platform, Map<String, String> p) {
-        this.platformName = platform;
-        this.baseUrl      = p.get("restApiUrl");
-        this.apiKey       = p.get("apiKey");
-        if (p.containsKey("pollInterval"))
-            pollInterval = Duration.ofSeconds(Integer.parseInt(p.get("pollInterval")));
+    public void connect(String platformName, Map<String, String> _ignored) {
+        this.platformName = platformName;
 
-        scheduler.scheduleAtFixedRate(this::pollAll, 0,
-                pollInterval.toMillis(), TimeUnit.MILLISECONDS);
+        if (!loadOwnConfig()) {
+            LOG.error("⛔ Config load failed – RESTProvider could not be started.");
+            return;
+        }
+        LOG.info("🔍 REST config  url={} interval={}s", baseUrl, pollInterval.getSeconds());
 
-        if (coordinator != null) coordinator.onConnect(platformName, true);
-        //log.info("✅ RESTProvider started for {} – interval {} s", platform, pollInterval.getSeconds());
+        connected.set(true);
+        safe(() -> coordinator.onConnect(platformName, true));
+
+        scheduler.scheduleAtFixedRate(this::pollAll, 0, pollInterval.toMillis(), TimeUnit.MILLISECONDS);
     }
 
     @Override
-    public void disConnect(String p, Map<String,String> pm) {
+    public void disConnect(String _plat, Map<String, String> _unused) {
         close();
     }
 
     @Override
-    public void subscribe  (String p, String r) {
-        subs.add(r);
+    public void subscribe(String _plat, String rateName) {
+        subscriptions.add(rateName);                       // set'e ekle
     }
 
     @Override
-    public void unSubscribe(String p, String r) {
-        subs.remove(r);
-        sentOnce.remove(r); // unsubscribe edilince sıfırla
+    public void unSubscribe(String _plat, String rateName) {
+        subscriptions.remove(rateName);
+        //notifiedRates.remove(rateName); // Hmm subscribe metodunda bu rate e bir şey eklemiyoruz ama şimdi de silmeye çalışıyoruz burada hata fırlatılabilir
+                                        // Aslında hatta buna gerek yok ki ?? Çünkü bu zaten güncel abonelikleri tutmuyor, yani bir şeyden abonelikten çıkmış
+                                        // isek notifiedRates den silmemiz saçma zaten abone olmuşsak eğer o rate önceden gelmiştir ki ??
+                                        // Yani tekrar abone olursak zaten notifiedRates in bunu ilk kez geliyormuş gibi davranmaması gerekiyor.
+                                        // O yüzden bu satırı yorum satırına aldım sonra düşünürüm ne yapacağımı
     }
 
     @Override
-    public void setCoordinator(ICoordinator c)  {
-        coordinator = c;
+    public void setCoordinator(ICoordinator c) {
+        this.coordinator = c;
     }
 
-
+    /* ═════ polling ═════ */
 
     private void pollAll() {
-        if (subs.isEmpty() || baseUrl == null) return;
-
-        subs.parallelStream()
-                .forEach(this::fetchOne);
+        if (subscriptions.isEmpty() || baseUrl == null) return;
+        subscriptions.forEach(this::fetchOne);
     }
 
     private void fetchOne(String rateName) {
@@ -104,43 +107,63 @@ public class RESTProvider implements IProvider, AutoCloseable {
                     .timeout(Duration.ofSeconds(3))
                     .build();
 
-            String body = http.send(req, HttpResponse.BodyHandlers.ofString()).body();
-            Rate r = parseRate(rateName, body);
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
 
-            if (r == null || coordinator == null) return;
+            JsonNode jsonNode = objectMapper.readTree(resp.body());
+            String name = jsonNode.path("rateName").asText(rateName);
+            double bid = jsonNode.path("bid").asDouble();
+            double ask = jsonNode.path("ask").asDouble();
+            String ts = jsonNode.path("timestamp").asText(Instant.now().toString());
 
-            if (sentOnce.add(rateName)) {
-                coordinator.onRateAvailable(platformName, r.getRateName(), r);
-            } else {
-                coordinator.onRateUpdate(platformName, r.getRateName(), r.getFields());
+            RateFields rateFields = new RateFields(bid, ask, ts);
+
+            if (notifiedRates.add(rateName)) {
+                coordinator.onRateAvailable(platformName, name, new Rate(name, rateFields, new RateStatus(true,true)));
             }
-
+            else {
+                coordinator.onRateUpdate(platformName, rateName, rateFields);
+            }
         } catch (Exception e) {
-            log.warn("REST fetch error {} => {}", rateName, e.getMessage());
+            LOG.warn("🌐 Failed to fetch REST data for [{}] → {}", rateName, e.getMessage());
         }
     }
 
-    private Rate parseRate(String fallback, String json) {
-        try {
-            JsonNode n  = om.readTree(json);
-            String rN   = n.path("rateName").asText(fallback);
-            double bid  = n.path("bid").asDouble();
-            double ask  = n.path("ask").asDouble();
-            String iso  = n.path("timestamp").asText(Instant.now().toString());
+    /* ═════ helpers ═════ */
 
-            return new Rate(rN, new RateFields(bid, ask, iso),
-                    new RateStatus(true, true)); // status her zaman true/true
+    private boolean loadOwnConfig() {
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream(CONFIG_FILE)) {
+            if (is == null) {
+                LOG.error("{} not found", CONFIG_FILE);
+                return false;
+            }
+
+            String txt = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            JSONObject cfg = new JSONObject(txt);
+
+            this.baseUrl      = cfg.getString("restApiUrl");
+            this.apiKey       = cfg.getString("apiKey");
+            this.pollInterval = Duration.ofSeconds(cfg.optInt("pollInterval", 5));
+            return true;
+
         } catch (Exception e) {
-            log.error("JSON parse error {} => {}", fallback, e.getMessage());
-            return null;
+            LOG.error("Config load failed: {}", e.getMessage());
+            return false;
         }
     }
 
     @Override
     public void close() {
         scheduler.shutdownNow();
-        sentOnce.clear(); // tüm kayıtları temizle
-        if (coordinator != null) coordinator.onDisConnect(platformName, false);
-        //log.info("🛑 RESTProvider stopped for {}", platformName);
+        notifiedRates.clear();
+        connected.set(false);
+        safe(() -> coordinator.onDisConnect(platformName, false));
+    }
+
+    private static void safe(Runnable r) {
+        try {
+            r.run();
+        } catch (Exception e) {
+            LOG.debug("safe-run error: {}", e.getMessage());
+        }
     }
 }

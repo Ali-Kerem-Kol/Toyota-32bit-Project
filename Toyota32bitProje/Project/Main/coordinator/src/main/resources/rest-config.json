@@ -1,0 +1,5 @@
+{
+  "restApiUrl": "http://rest-server:8081/api/rates",
+  "apiKey": "8f5d3c9a-94b0-49d4-87e9-12a5c13e6c7a",
+  "pollInterval": "5"
+}
