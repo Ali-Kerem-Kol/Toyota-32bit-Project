@@ -36,9 +36,9 @@ public class RedisProducerService {
                     .approximateTrimming()
                     .maxLen(maxStreamLength), map);
 
-            log.info("📤 {} stream’e yazıldı: {}", streamName, rateName);
+            log.info("📤 Rate published to stream '{}': {}", streamName, rateName);
         } catch (Exception e) {
-            log.error("❌ Stream yazım hatası ({}): {}", streamName, e.getMessage(), e);
+            log.error("❌ Failed to write to stream '{}': {}", streamName, e.getMessage(), e);
         }
     }
 

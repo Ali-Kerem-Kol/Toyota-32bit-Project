@@ -1,6 +1,7 @@
 package com.mydomain.main.service;
 
 import com.mydomain.main.config.ConfigReader;
+import com.mydomain.main.exception.CalculationException;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
@@ -30,7 +31,7 @@ public class RateCalculatorService {
      */
     public Map<String, Rate> calculate(Map<String, List<Rate>> groupedRates) {
         if (!groupedRates.containsKey("USDTRY") || groupedRates.get("USDTRY").isEmpty() || groupedRates.isEmpty()) {
-            logger.warn("❌ Hiç USDTRY verisi yok; hesaplama atlandı.");
+            logger.warn("❌ No USDTRY data available, skipping calculation.");
             return Collections.emptyMap();
         }
 
@@ -38,7 +39,7 @@ public class RateCalculatorService {
 
         for (String shortName : shortnames) {
             if (!groupedRates.containsKey(shortName) && !shortName.equals("USDTRY")) {
-                logger.warn("💡 {} verisi yok; atlanıyor.", shortName);
+                logger.warn("💡 No data for {}, skipping.", shortName);
                 continue;
             }
 
@@ -50,8 +51,10 @@ public class RateCalculatorService {
                         calc.getRateName(),
                         calc.getFields().getBid(),
                         calc.getFields().getAsk());
+            } catch (CalculationException e) {          // ayrık log seviyesi
+                logger.error("🧮 Formula error for {}: {}", shortName, e.getMessage());
             } catch (Exception e) {
-                logger.error("❌ {} hesaplanırken hata: {}", shortName, e.getMessage(), e);
+                logger.error("❌ Error while calculating {}: {}", shortName, e.getMessage(), e);
             }
         }
 
@@ -87,18 +90,22 @@ public class RateCalculatorService {
             }
         }
 
-        // JavaScript ile hesapla
-        double[] result = DynamicFormulaService.calculate(ctx);
+        try {
+            // JavaScript ile hesapla
+            double[] result = DynamicFormulaService.calculate(ctx);
 
-        // Örn: EURUSD → EURTRY
-        String resultName = shortName.endsWith("USD") && !shortName.equals("USDTRY")
-                ? shortName.substring(0, 3) + "TRY"
-                : shortName;
+            // Örn: EURUSD → EURTRY
+            String resultName = shortName.endsWith("USD") && !shortName.equals("USDTRY")
+                    ? shortName.substring(0, 3) + "TRY"
+                    : shortName;
 
-        return new Rate(
-                resultName,
-                new RateFields(result[0], result[1], System.currentTimeMillis()),
-                new RateStatus(true, true)
-        );
+            return new Rate(
+                    resultName,
+                    new RateFields(result[0], result[1], System.currentTimeMillis()),
+                    new RateStatus(true, true)
+            );
+        } catch (Exception e) {
+            throw new CalculationException("Script execution failed", e);
+        }
     }
 }

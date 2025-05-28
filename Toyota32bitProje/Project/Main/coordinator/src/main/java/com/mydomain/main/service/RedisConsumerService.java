@@ -45,12 +45,12 @@ public class RedisConsumerService {
                 jedis.xadd(streamName, StreamEntryID.NEW_ENTRY, Map.of("init", "1"));
             }
             jedis.xgroupCreate(streamName, groupName, StreamEntryID.LAST_ENTRY, true);
-            log.info("✅ Group oluşturuldu: {} (stream: {})", groupName, streamName);
+            log.info("✅ Consumer group created: {} (stream: {})", groupName, streamName);
         } catch (Exception e) {
             if (e.getMessage() != null && e.getMessage().contains("BUSYGROUP")) {
-                log.info("ℹ️ Group zaten var: {}", groupName);
+                log.info("ℹ️ Consumer group already exists: {}", groupName);
             } else {
-                log.error("❌ Group oluşturulamadı: {}", e.getMessage(), e);
+                log.error("❌ Failed to create consumer group: {}", e.getMessage(), e);
             }
         }
     }
@@ -69,7 +69,7 @@ public class RedisConsumerService {
             if (entries == null || entries.isEmpty()) return List.of();
             return entries.get(0).getValue();
         } catch (Exception e) {
-            log.error("❌ Stream okuma hatası: {}", e.getMessage(), e);
+            log.error("❌ Error reading from stream: {}", e.getMessage(), e);
             return List.of();
         }
     }
@@ -77,9 +77,9 @@ public class RedisConsumerService {
     public void acknowledge(StreamEntry entry) {
         try (Jedis jedis = jedisPool.getResource()) {
             jedis.xack(streamName, groupName, entry.getID());
-            log.info("✅ ACK: {}", entry.getID());
+            log.info("✅ Acknowledged: {}", entry.getID());
         } catch (Exception e) {
-            log.error("❌ ACK hatası: {}", e.getMessage(), e);
+            log.error("❌ Acknowledge failed: {}", e.getMessage(), e);
         }
     }
 
@@ -93,7 +93,7 @@ public class RedisConsumerService {
 
             return new Rate(name, new RateFields(bid, ask, ts), new RateStatus(true, true));
         } catch (Exception e) {
-            log.error("parseStreamEntry error: {}", e.getMessage(), e);
+            log.error("❌ Failed to parse stream entry: {}", e.getMessage(), e);;
             return null;
         }
     }

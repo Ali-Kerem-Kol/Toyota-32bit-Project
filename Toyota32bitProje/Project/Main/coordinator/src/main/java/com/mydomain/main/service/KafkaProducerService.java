@@ -1,6 +1,7 @@
 package com.mydomain.main.service;
 
 import com.mydomain.main.config.ConfigReader;
+import com.mydomain.main.exception.KafkaPublishingException;
 import com.mydomain.main.model.Rate;
 import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -88,43 +89,46 @@ public final class KafkaProducerService {
      */
     public void sendRatesToKafka(Map<String, Rate> rates) {
         if (rates == null || rates.isEmpty()) {
-            log.warn("Kafka gönderimi için boş veri seti alındı.");
+            log.warn("Received an empty or null rate set for Kafka publishing.");
             return;
         }
 
         rates.forEach(this::sendRateToKafka);
     }
 
+    /** Bir rate’i gönderir; başarısız olursa özel istisna fırlatır. */
     private void sendRateToKafka(String rateName, Rate rate) {
         if (KAFKA_PRODUCER == null) {
-            log.error("Kafka producer NULL  → mesaj atlandı: {}", rateName);
-            return;
+            throw new KafkaPublishingException("Kafka producer is null", rateName, null);
         }
 
         String tsIso = OffsetDateTime.now(ZoneOffset.UTC)
                 .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
-
         String payload = String.format("%s|%f|%f|%s",
                 rateName,
                 rate.getFields().getBid(),
                 rate.getFields().getAsk(),
                 tsIso);
 
-        ProducerRecord<String, String> producerRecord = new ProducerRecord<>(topicName, payload);
+        ProducerRecord<String,String> rec = new ProducerRecord<>(topicName, payload);
 
-        KAFKA_PRODUCER.send(producerRecord, (meta, ex) -> {
-            if (ex != null) {
-                log.error("Kafka SEND FAIL [{}] → {}", payload, ex.toString());
-                try {
-                    KAFKA_PRODUCER.close();
-                } catch (Exception ignore) {
+        // send() artık Future dönüyor – sync get() ile timeout yakalıyoruz
+        try {
+            KAFKA_PRODUCER.send(rec).get(requestTimeoutMs, TimeUnit.MILLISECONDS);
+            log.info("Kafka OK  (topic {} ) → {}", topicName, payload);
+        } catch (Exception ex) {
+            closeSilently();
+            // Çağıran isterse yakalasın diye fırlatıyoruz
+            throw new KafkaPublishingException("Kafka send failed", payload, ex);
+        }
+    }
 
-                }
-                KAFKA_PRODUCER = null;
-            } else {
-                log.info("Kafka OK  ({}-{} @ offset {}) → {}",
-                        meta.topic(), meta.partition(), meta.offset(), payload);
-            }
-        });
+    private void closeSilently() {
+        try {
+            if (KAFKA_PRODUCER != null) KAFKA_PRODUCER.close();
+        } catch (Exception ignored) {
+
+        }
+        KAFKA_PRODUCER = null;
     }
 }
