@@ -1,16 +1,12 @@
 package com.mydomain.main.exception;
 
-/**
- * Kafka'ya mesaj gönderilirken yaşanan hatalar (bağlantı, timeout, serialize vb.)
- * bu sınıf ile yakalanıp fırlatılabilir.
- */
 public class KafkaPublishingException extends RuntimeException {
+    private final String payload;          // debugging için
 
-    public KafkaPublishingException(String message) {
-        super(message);
+    public KafkaPublishingException(String msg, String payload, Throwable cause) {
+        super(msg, cause);
+        this.payload = payload;
     }
 
-    public KafkaPublishingException(String message, Throwable cause) {
-        super(message, cause);
-    }
+    public String getPayload() { return payload; }
 }
