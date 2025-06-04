@@ -85,11 +85,11 @@ public class FilterService {
             try {
                 boolean accepted = filter.shouldAccept(platform, rateName, last, candidate, history);
                 if (!accepted) {
-                    logger.warn("FilterService: {} rejected rate (platform={}, rateName={})",
+                    logger.warn("❌ FilterService: {} rejected rate (platform={}, rateName={})",
                             filter.getClass().getSimpleName(), platform, rateName);
                     return false;
                 } else {
-                    logger.trace("FilterService: {} passed (platform={}, rateName={})",
+                    logger.trace("✅ FilterService: {} passed (platform={}, rateName={})",
                             filter.getClass().getSimpleName(), platform, rateName);
                 }
             } catch (Exception e) {

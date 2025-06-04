@@ -133,23 +133,17 @@ public class RESTProvider implements IProvider, AutoCloseable {
             double ask = jsonNode.path("ask").asDouble();
             String ts = jsonNode.path("timestamp").asText(Instant.now().toString());
 
-            logger.trace("[{}] Fetched REST rate: {} = bid:{} ask:{} ts:{}",
-                    platformName, rateName, bid, ask, ts);
+            logger.trace("[{}] Fetched REST rate: {} = bid:{} ask:{} ts:{}", platformName, rateName, bid, ask, ts);
 
             if (cache.isFirstRate(platformName, rateName)) {
-                Rate rate = cache.addNewRate(platformName, rateName, new RateFields(bid, ask, ts));
-                logger.debug("[{}] First rate for {} → sending to coordinator.onRateAvailable()", platformName, rateName);
+                Rate rate = cache.addFirstRate(platformName, rateName, new RateFields(bid, ask, ts));
+                if (rate == null) return; // Cache already has this rate
                 coordinator.onRateAvailable(platformName, rateName, rate);
             } else {
-                Rate updatedRate = cache.updateRate(platformName, rateName, new RateFields(bid, ask, ts));
-                if (updatedRate == null) {
-                    logger.warn("[{}] ⚠️ Rate rejected by filters: {}", platformName, rateName);
-                    return;
-                }
-                logger.debug("[{}] Updated rate for {} → sending to coordinator.onRateUpdate()", platformName, rateName);
+                Rate updatedRate = cache.addNewRate(platformName, rateName, new RateFields(bid, ask, ts));
+                if (updatedRate == null) return; // Cache has not have this rate yet
                 coordinator.onRateUpdate(platformName, rateName, updatedRate.getFields());
             }
-
         } catch (Exception e) {
             logger.error("🌐 [{}] Failed to fetch/process REST data for [{}] → {}", platformName, rateName, e.getMessage(), e);
         }

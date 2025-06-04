@@ -33,17 +33,15 @@ public class RateCache {
         return deque == null || deque.isEmpty();
     }
 
-    public Rate addNewRate(String platform, String rateName, RateFields rateFields) {
+    public Rate addFirstRate(String platform, String rateName, RateFields rateFields) {
         Map<String, ArrayDeque<Rate>> platformRates =
                 cache.computeIfAbsent(platform, p -> new ConcurrentHashMap<>());
         ArrayDeque<Rate> deque =
                 platformRates.computeIfAbsent(rateName, r -> new ArrayDeque<>());
 
+
         synchronized (deque) {
-            if (deque.size() >= maxSize) {
-                Rate removed = deque.pollFirst();
-                logger.trace("Cache full → Oldest rate removed: {}", removed);
-            }
+            if (!deque.isEmpty()) return null; // If rate already exists, do not add
             Rate rate = new Rate(rateName, rateFields, new RateStatus(true, false));
             deque.addLast(rate);
             logger.trace("New rate added to cache: platform={}, rateName={}, rate={}", platform, rateName, rate);
@@ -52,17 +50,14 @@ public class RateCache {
     }
 
 
-    public Rate updateRate(String platform, String rateName, RateFields updatedFields) {
+    public Rate addNewRate(String platform, String rateName, RateFields updatedFields) {
         Map<String, ArrayDeque<Rate>> platformRates =
                 cache.computeIfAbsent(platform, p -> new ConcurrentHashMap<>());
         ArrayDeque<Rate> deque =
                 platformRates.computeIfAbsent(rateName, r -> new ArrayDeque<>());
 
         synchronized (deque) {
-            if (deque.isEmpty()) {
-                logger.trace("Cache empty, falling back to addNewRate for: {} / {}", platform, rateName);
-                return addNewRate(platform, rateName, updatedFields);
-            }
+            if (deque.isEmpty()) return null; // If no existing rates, cannot update
 
             Rate last = deque.peekLast();
             Rate updated = new Rate(last);
@@ -71,16 +66,10 @@ public class RateCache {
             updated.getStatus().setUpdated(true);
 
             List<Rate> history = new ArrayList<>(deque);
-            if (!filterService.applyAllFilters(platform, rateName, last, updated, history)) {
-                logger.warn("Rate rejected by filters: platform={}, rateName={}, updated={}",
-                        platform, rateName, updatedFields);
-                return null;
-            }
+            if (!filterService.applyAllFilters(platform, rateName, last, updated, history)) return null;
 
-            if (deque.size() >= maxSize) {
-                Rate removed = deque.pollFirst();
-                logger.trace("Cache full → Oldest rate removed: {}", removed);
-            }
+            if (deque.size() >= maxSize) deque.pollFirst(); // Remove oldest rate if cache is full
+
             deque.addLast(updated);
             logger.trace("Rate updated in cache: platform={}, rateName={}, updated={}", platform, rateName, updated);
             return updated;

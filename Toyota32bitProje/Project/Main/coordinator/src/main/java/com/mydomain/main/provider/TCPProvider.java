@@ -172,16 +172,16 @@ public class TCPProvider implements IProvider {
     }
 
     private void handle(String line) {
-        if (!line.contains("|") || coordinator == null) return;
-
-        String[] p = line.split("\\|");
-
-        if (p.length < 4) {
-            logger.warn("🚫 [{}] Invalid TCP message: {}", platformName, line);
-            return;
-        }
-
         try {
+            if (!line.contains("|") || coordinator == null) return;
+
+            String[] p = line.split("\\|");
+
+            if (p.length < 4) {
+                logger.warn("🚫 [{}] Invalid TCP message: {}", platformName, line);
+                return;
+            }
+
             String rateName = p[0];
             double bid = Double.parseDouble(p[1].split(":", 3)[2]);
             double ask = Double.parseDouble(p[2].split(":", 3)[2]);
@@ -190,19 +190,14 @@ public class TCPProvider implements IProvider {
             logger.trace("[{}] Received TCP data: {} = bid:{} ask:{} ts:{}", platformName, rateName, bid, ask, ts);
 
             if (cache.isFirstRate(platformName, rateName)) {
-                Rate rate = cache.addNewRate(platformName, rateName, new RateFields(bid, ask, ts));
-                logger.debug("[{}] First rate for {} → coordinator.onRateAvailable()", platformName, rateName);
+                Rate rate = cache.addFirstRate(platformName, rateName, new RateFields(bid, ask, ts));
+                if (rate == null) return; // Cache already has this rate
                 coordinator.onRateAvailable(platformName, rateName, rate);
             } else {
-                Rate updatedRate = cache.updateRate(platformName, rateName, new RateFields(bid, ask, ts));
-                if (updatedRate == null) {
-                    logger.warn("[{}] ⚠️ Rate rejected by filters: {}", platformName, rateName);
-                    return;
-                }
-                logger.debug("[{}] Updated rate for {} → coordinator.onRateUpdate()", platformName, rateName);
+                Rate updatedRate = cache.addNewRate(platformName, rateName, new RateFields(bid, ask, ts));
+                if (updatedRate == null) return; // Cache has not have this rate yet
                 coordinator.onRateUpdate(platformName, rateName, updatedRate.getFields());
             }
-
         } catch (Exception e) {
             logger.error("📉 [{}] Failed to parse/process TCP data [{}] → {}", platformName, line, e.getMessage(), e);
         }
