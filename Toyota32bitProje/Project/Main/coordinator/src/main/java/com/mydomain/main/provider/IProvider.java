@@ -1,5 +1,6 @@
 package com.mydomain.main.provider;
 
+import com.mydomain.main.cache.RateCache;
 import com.mydomain.main.coordinator.ICoordinator;
 import java.util.Map;
 
@@ -49,5 +50,7 @@ public interface IProvider {
      * @param coordinator Uygulamanın koordinatör nesnesi
      */
     void setCoordinator(ICoordinator coordinator);
+
+    void setCache(RateCache cache); // Sağlayıcıya RateCache nesnesi eklenir, böylece sağlayıcı verileri önbelleğe alabilir.
 
 }

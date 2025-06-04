@@ -1,5 +1,6 @@
 package com.mydomain.main.provider;
 
+import com.mydomain.main.cache.RateCache;
 import com.mydomain.main.coordinator.ICoordinator;
 import com.mydomain.main.model.*;
 import org.apache.logging.log4j.LogManager;
@@ -9,6 +10,8 @@ import org.json.JSONObject;
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
@@ -19,165 +22,152 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class TCPProvider implements IProvider {
 
-    /* ───────── static ───────── */
-    private static final Logger LOG = LogManager.getLogger(TCPProvider.class);
-    private static final String CONFIG_FILE = "tcp-config.json";
+    private static final Logger logger = LogManager.getLogger(TCPProvider.class);
+    private static final String CONFIG_FILE_PATH = "/app/Main/coordinator/config/tcp-config.json";
 
-    /* ───────── wiring ───────── */
     private ICoordinator coordinator;
-    private String platform;
+    private String platformName;
+    private RateCache cache;
 
-    /* bağlantı parametreleri */
     private String host;
-    private int    port;
+    private int port;
 
-    /* ───────── state ───────── */
     private final AtomicBoolean reconnect = new AtomicBoolean(true);
-    private volatile boolean    running   = false;
+    private volatile boolean running = false;
 
     private final Set<String> subscriptions = ConcurrentHashMap.newKeySet();
-    private final Set<String> sentOnce      = ConcurrentHashMap.newKeySet();
-
     private volatile BufferedReader in;
-    private volatile OutputStream   out;
+    private volatile OutputStream out;
     private Thread connectionThread;
 
-    /* ═════ IProvider ═════ */
-
     @Override
-    public void connect(String platform, Map<String, String> _ignored) {
+    public void connect(String platformName, Map<String, String> _ignored) {
+        this.platformName = platformName;
+        logger.trace("connect() called for platform: {}", platformName);
 
-        this.platform = platform;
-
-        /* 1️⃣ bağlantı konfigürasyonunu yükle */
         if (!loadOwnConfig()) {
-            LOG.error("⛔ Config load failed – TCPProvider could not be started.");
+            logger.error("⛔ Config load failed – TCPProvider could not be started.");
             return;
         }
-        LOG.info("🔍 TCP config  host={} port={}", host, port);
 
-        /* 2️⃣ bağlantı döngüsünü başlat */
-        connectionThread = new Thread(this::loop, "tcp-worker-" + platform);
+        logger.info("🔍 [{}] TCP config loaded: host={}, port={}", platformName, host, port);
+
+        connectionThread = new Thread(this::loop, "tcp-worker-" + platformName);
         connectionThread.setDaemon(true);
         connectionThread.start();
     }
 
     @Override
-    public void disConnect(String _plat, Map<String, String> _unused) {
+    public void disConnect(String platformName, Map<String, String> _unused) {
+        logger.trace("disConnect() called for platform: {}", platformName);
         reconnect.set(false);
         running = false;
         subscriptions.clear();
-        sentOnce.clear();
-        safe(() -> coordinator.onDisConnect(platform, false));
+        logger.trace("Calling coordinator.onDisConnect() for: {}", platformName);
+        safe(() -> coordinator.onDisConnect(platformName, false));
         if (connectionThread != null) connectionThread.interrupt();
+        logger.debug("TCPProvider thread interrupted for: {}", platformName);
     }
 
     @Override
-    public void subscribe(String _plat, String rate) {
-        /* her durumda set'e ekle */
+    public void subscribe(String platformName, String rate) {
         subscriptions.add(rate);
+        logger.trace("[{}] Subscribing to: {}", platformName, rate);
 
         if (running && out != null) {
             if (sendCmd("subscribe|" + rate))
-                LOG.info("✅ Subscribed {}", rate);
+                logger.info("✅ [{}] Subscribed to rate: {}", platformName, rate);
             else
-                LOG.warn("⚠️ Subscribe failed {}", rate);
+                logger.warn("⚠️ [{}] Failed to subscribe to rate: {}", platformName, rate);
         } else {
-            LOG.info("🔒 No connection, will subscribe on reconnect: {}", rate);
+            logger.trace("[{}] Deferred subscribe for {} (no active connection)", platformName, rate);
         }
     }
 
-
     @Override
-    public void unSubscribe(String _plat, String rate) {
+    public void unSubscribe(String platformName, String rate) {
         if (subscriptions.remove(rate)) {
             if (running && out != null) {
+                logger.trace("[{}] Sending unsubscribe command for rate: {}", platformName, rate);
                 sendCmd("unsubscribe|" + rate);
             }
-            LOG.info("✅ Unsubscribed {}", rate);
+            logger.info("✅ [{}] Unsubscribed from rate: {}", platformName, rate);
         }
-        //sentOnce.remove(rate); // RESTProvider daki mantık aynı şekilde burda da geçerli,bunu silmeli miyim acaba ??
     }
 
     @Override
-    public void setCoordinator(ICoordinator c) { this.coordinator = c; }
+    public void setCoordinator(ICoordinator c) {
+        this.coordinator = c;
+        logger.trace("Coordinator reference set for TCPProvider.");
+    }
 
-    /* ═════ core loop ═════ */
+    @Override
+    public void setCache(RateCache cache) {
+        this.cache = cache;
+        logger.trace("Cache reference set for TCPProvider.");
+    }
 
-
-    /**
-     * Bu metod, TCP bağlantısını kurar ve bağlantı aktif olduğu sürece gelen verileri dinler.
-     * Java'nın "try-with-resources" yapısı kullanılarak `Socket`, `BufferedReader` ve `OutputStream`
-     * gibi dış kaynaklar otomatik olarak kapatılır. Bu, manuel `close()` çağrısı ihtiyacını ortadan kaldırır
-     * ve kaynak sızıntılarını önler.
-     *
-     * Bağlantı sırasında oluşturulan `input` ve `output` nesneleri, sınıfın diğer metodlarında
-     * da erişilebilmesi amacıyla `this.in` ve `this.out` alanlarına atanır. Böylece,
-     * örneğin `sendCmd()` gibi metodlar bu bağlantı üzerinden veri gönderebilir.
-     *
-     * Bağlantı koptuğunda otomatik olarak yeniden bağlanmayı dener; her döngü sonunda
-     * mevcut abonelikler ve durum güncellenir.
-     */
     private void loop() {
+        logger.trace("🔁 [{}] TCP loop started", platformName);
         while (reconnect.get()) {
             try (Socket socket = new Socket(host, port);
-                 BufferedReader input  = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                 OutputStream   output = socket.getOutputStream()) {
+                 BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                 OutputStream output = socket.getOutputStream()) {
 
-                this.in = input; this.out = output; running = true;
-                safe(() -> coordinator.onConnect(platform, true));
+                this.in = input;
+                this.out = output;
+                running = true;
+                logger.trace("Calling coordinator.onConnect() for: {}", platformName);
+                safe(() -> coordinator.onConnect(platformName, true));
 
-                /* mevcut tüm abonelikleri gönder */
+                logger.info("🔌 [{}] TCP connection established with {}:{}", platformName, host, port);
                 subscriptions.forEach(this::sendSilently);
 
                 String line;
                 while (running && (line = in.readLine()) != null) handle(line);
 
             } catch (IOException ioe) {
-                LOG.warn("TCP connect/read failed {}:{} → {}. Will retry in 5 seconds.", host, port, ioe.getMessage());
+                logger.error("❗ [{}] TCP connect/read failed {}:{} → {}. Retrying in 5s...", platformName, host, port, ioe.getMessage(), ioe);
             }
+
             running = false;
-            sentOnce.clear();   //  ← eklendi !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            safe(() -> coordinator.onDisConnect(platform, false));
-            if (reconnect.get()) waitMs(5_000);
+            logger.trace("Calling coordinator.onDisConnect() for: {}", platformName);
+            safe(() -> coordinator.onDisConnect(platformName, false));
+            logger.info("🔌 [{}] TCP connection closed", platformName);
+
+            if (reconnect.get()) waitMs(5000);
         }
+        logger.trace("🔁 [{}] TCP loop terminated", platformName);
     }
 
-    /* ───────── helpers ───────── */
-
-    /** tcp-config.json dosyasını classpath'ten okur. */
     private boolean loadOwnConfig() {
         try {
-            InputStream is = getClass().getClassLoader().getResourceAsStream(CONFIG_FILE);
-            if (is == null) {
-                LOG.error("{} not found", CONFIG_FILE);
-                return false;
-            }
-
-            String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            byte[] bytes = Files.readAllBytes(Paths.get(CONFIG_FILE_PATH));
+            String json = new String(bytes, StandardCharsets.UTF_8);
             JSONObject cfg = new JSONObject(json);
             this.host = cfg.getString("host");
             this.port = cfg.getInt("port");
             return true;
-
         } catch (Exception e) {
-            LOG.error("Config load failed: {}", e.getMessage());
+            logger.error("Config load failed from path [{}]: {}", CONFIG_FILE_PATH, e.getMessage(), e);
             return false;
         }
     }
 
     private void sendSilently(String rate) {
+        logger.trace("[{}] Silently sending subscription command for: {}", platformName, rate);
         if (out != null) sendCmd("subscribe|" + rate);
     }
 
     private boolean sendCmd(String cmd) {
         try {
+            logger.trace("[{}] Sending TCP command: {}", platformName, cmd);
             out.write((cmd + '\n').getBytes());
             out.flush();
             return true;
-        }
-        catch (Exception e) {
-            LOG.error("📤 Send err [{}] {}", cmd, e.getMessage()); return false;
+        } catch (Exception e) {
+            logger.error("📤 [{}] Failed to send command [{}] → {}", platformName, cmd, e.getMessage(), e);
+            return false;
         }
     }
 
@@ -187,37 +177,48 @@ public class TCPProvider implements IProvider {
         String[] p = line.split("\\|");
 
         if (p.length < 4) {
-            LOG.warn("🚫 Bad msg {}", line);
+            logger.warn("🚫 [{}] Invalid TCP message: {}", platformName, line);
             return;
         }
+
         try {
-            String name = p[0];
-            double bid = Double.parseDouble(p[1].split(":",3)[2]);
-            double ask = Double.parseDouble(p[2].split(":",3)[2]);
-            long ts   = parseTimestamp(p[3]);
+            String rateName = p[0];
+            double bid = Double.parseDouble(p[1].split(":", 3)[2]);
+            double ask = Double.parseDouble(p[2].split(":", 3)[2]);
+            long ts = parseTimestamp(p[3]);
 
+            logger.trace("[{}] Received TCP data: {} = bid:{} ask:{} ts:{}", platformName, rateName, bid, ask, ts);
 
-            RateFields rateFields = new RateFields(bid, ask, ts);
-
-            if (sentOnce.add(name)) {
-                coordinator.onRateAvailable(platform, name, new Rate(name, rateFields, new RateStatus(true,true)));
+            if (cache.isFirstRate(platformName, rateName)) {
+                Rate rate = cache.addNewRate(platformName, rateName, new RateFields(bid, ask, ts));
+                logger.debug("[{}] First rate for {} → coordinator.onRateAvailable()", platformName, rateName);
+                coordinator.onRateAvailable(platformName, rateName, rate);
+            } else {
+                Rate updatedRate = cache.updateRate(platformName, rateName, new RateFields(bid, ask, ts));
+                if (updatedRate == null) {
+                    logger.warn("[{}] ⚠️ Rate rejected by filters: {}", platformName, rateName);
+                    return;
+                }
+                logger.debug("[{}] Updated rate for {} → coordinator.onRateUpdate()", platformName, rateName);
+                coordinator.onRateUpdate(platformName, rateName, updatedRate.getFields());
             }
-            else {
-                coordinator.onRateUpdate(platform, name, rateFields);
-            }
+
         } catch (Exception e) {
-            LOG.warn("📉 Parse err {}", e.getMessage());
+            logger.error("📉 [{}] Failed to parse/process TCP data [{}] → {}", platformName, line, e.getMessage(), e);
         }
     }
 
     private long parseTimestamp(String raw) {
         try {
-            String d = raw.split(":",3)[2];
+            String d = raw.split(":", 3)[2];
             var fmt = new DateTimeFormatterBuilder().appendPattern("yyyy-MM-dd'T'HH:mm:ss")
-                    .optionalStart().appendFraction(ChronoField.NANO_OF_SECOND,1,9,true).optionalEnd()
+                    .optionalStart().appendFraction(ChronoField.NANO_OF_SECOND, 1, 9, true).optionalEnd()
                     .appendPattern("[XXX][X]").toFormatter();
-            return OffsetDateTime.parse(d, fmt).toInstant().toEpochMilli();
+            long parsedTime = OffsetDateTime.parse(d, fmt).toInstant().toEpochMilli();
+            logger.trace("[{}] Parsed timestamp '{}' → {}", platformName, raw, parsedTime);
+            return parsedTime;
         } catch (Exception e) {
+            logger.warn("[{}] Failed to parse timestamp [{}], using current time. Reason: {}", platformName, raw, e.getMessage());
             return System.currentTimeMillis();
         }
     }
@@ -225,10 +226,11 @@ public class TCPProvider implements IProvider {
     private static void safe(Runnable r) {
         try {
             r.run();
-        } catch (Exception ignored) {
-
+        } catch (Exception e) {
+            logger.debug("safe-run error: {}", e.getMessage(), e);
         }
     }
+
     private static void waitMs(long ms) {
         try {
             Thread.sleep(ms);

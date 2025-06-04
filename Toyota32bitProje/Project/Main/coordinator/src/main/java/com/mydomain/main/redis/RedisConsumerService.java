@@ -1,5 +1,6 @@
-package com.mydomain.main.service;
+package com.mydomain.main.redis;
 
+import com.mydomain.main.exception.RedisException;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
@@ -8,12 +9,13 @@ import org.apache.logging.log4j.Logger;
 import redis.clients.jedis.*;
 import redis.clients.jedis.params.XReadGroupParams;
 import redis.clients.jedis.resps.StreamEntry;
+
 import java.time.OffsetDateTime;
 import java.util.*;
 
 public class RedisConsumerService {
 
-    private static final Logger log = LogManager.getLogger(RedisConsumerService.class);
+    private static final Logger logger = LogManager.getLogger(RedisConsumerService.class);
 
     private final JedisPool jedisPool;
     private final String streamName;
@@ -21,7 +23,6 @@ public class RedisConsumerService {
     private final String consumerName;
     private final int readCount;
     private final int blockMillis;
-
 
     public RedisConsumerService(JedisPool jedisPool,
                                 String streamName,
@@ -45,17 +46,18 @@ public class RedisConsumerService {
                 jedis.xadd(streamName, StreamEntryID.NEW_ENTRY, Map.of("init", "1"));
             }
             jedis.xgroupCreate(streamName, groupName, StreamEntryID.LAST_ENTRY, true);
-            log.info("✅ Consumer group created: {} (stream: {})", groupName, streamName);
+            logger.info("✅ Consumer group created: {} (stream: {})", groupName, streamName);
         } catch (Exception e) {
             if (e.getMessage() != null && e.getMessage().contains("BUSYGROUP")) {
-                log.info("ℹ️ Consumer group already exists: {}", groupName);
+                logger.info("ℹ️ Consumer group already exists: {}", groupName);
             } else {
-                log.error("❌ Failed to create consumer group: {}", e.getMessage(), e);
+                logger.error("❌ Failed to create consumer group: {}", e.getMessage(), e);
+                throw new RedisException("Failed to create Redis consumer group", e);
             }
         }
     }
 
-    public List<StreamEntry> readStreamEntries() {
+    public List<StreamEntry> readStreamEntries() throws RedisException {
         try (Jedis jedis = jedisPool.getResource()) {
             Map<String, StreamEntryID> stream = Map.of(streamName, StreamEntryID.UNRECEIVED_ENTRY);
             List<Map.Entry<String, List<StreamEntry>>> entries = jedis.xreadGroup(
@@ -69,17 +71,17 @@ public class RedisConsumerService {
             if (entries == null || entries.isEmpty()) return List.of();
             return entries.get(0).getValue();
         } catch (Exception e) {
-            log.error("❌ Error reading from stream: {}", e.getMessage(), e);
-            return List.of();
+            logger.debug("⏱ Redis read error (suppressed): {}", e.getMessage());
+            throw new RedisException("Error reading from Redis stream", e);
         }
     }
 
     public void acknowledge(StreamEntry entry) {
         try (Jedis jedis = jedisPool.getResource()) {
             jedis.xack(streamName, groupName, entry.getID());
-            log.info("✅ Acknowledged: {}", entry.getID());
+            logger.debug("✅ Acknowledged: {}", entry.getID());
         } catch (Exception e) {
-            log.error("❌ Acknowledge failed: {}", e.getMessage(), e);
+            logger.debug("⏱ Redis ack error (suppressed): {}", e.getMessage());
         }
     }
 
@@ -93,7 +95,7 @@ public class RedisConsumerService {
 
             return new Rate(name, new RateFields(bid, ask, ts), new RateStatus(true, true));
         } catch (Exception e) {
-            log.error("❌ Failed to parse stream entry: {}", e.getMessage(), e);;
+            logger.debug("⏱ Failed to parse stream entry (suppressed): {}", e.getMessage());
             return null;
         }
     }
@@ -102,13 +104,11 @@ public class RedisConsumerService {
         try {
             return Long.parseLong(tsValue);
         } catch (NumberFormatException e) {
-            // ISO formatı geldiyse UTC'ye göre epoch millis'e çevir
             return OffsetDateTime.parse(tsValue).toInstant().toEpochMilli();
         }
     }
 
-
-    public Map<String, List<Rate>> readAndGroupRatesByShortName() {
+    public Map<String, List<Rate>> readAndGroupRatesByShortName() throws RedisException {
         Map<String, List<Rate>> groupedRates = new HashMap<>();
         List<StreamEntry> entries = readStreamEntries();
         for (StreamEntry entry : entries) {
@@ -122,7 +122,7 @@ public class RedisConsumerService {
         return groupedRates;
     }
 
-    public Map<String, Rate> readRatesAsMap() {
+    public Map<String, Rate> readRatesAsMap() throws RedisException {
         Map<String, Rate> calculatedRates = new HashMap<>();
         List<StreamEntry> entries = readStreamEntries();
         for (StreamEntry entry : entries) {

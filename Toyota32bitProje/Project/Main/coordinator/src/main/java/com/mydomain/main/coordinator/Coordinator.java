@@ -1,12 +1,18 @@
 package com.mydomain.main.coordinator;
 
-import com.mydomain.main.exception.KafkaPublishingException;
-import com.mydomain.main.exception.ProviderInitializationException;
+import com.mydomain.main.cache.RateCache;
+import com.mydomain.main.calculation.RateCalculatorService;
+import com.mydomain.main.config.ConfigReader;
+import com.mydomain.main.exception.FormulaEngineException;
+import com.mydomain.main.exception.KafkaException;
+import com.mydomain.main.exception.RedisException;
+import com.mydomain.main.kafka.KafkaProducerService;
 import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
 import com.mydomain.main.provider.IProvider;
-import com.mydomain.main.service.*;
+import com.mydomain.main.redis.RedisConsumerService;
+import com.mydomain.main.redis.RedisProducerService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.JSONArray;
@@ -14,8 +20,6 @@ import org.json.JSONObject;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -31,20 +35,22 @@ public class Coordinator implements ICoordinator {
     private final RateCalculatorService rateCalculatorService;
     private final KafkaProducerService kafkaProducerService;
 
-    private final ConcurrentMap<String, Rate> lastRates = new ConcurrentHashMap<>(); // En son değer cache
+    private final RateCache cache;
 
     public Coordinator(RedisProducerService redisRawProducer,
                        RedisConsumerService redisRawConsumer,
                        RedisProducerService redisCalculatedProducer,
                        RedisConsumerService redisCalculatedConsumer,
                        RateCalculatorService rateCalculatorService,
-                       KafkaProducerService kafkaProducerService) {
+                       KafkaProducerService kafkaProducerService,
+                       RateCache cache) {
         this.redisRawProducer = redisRawProducer;
         this.redisRawConsumer = redisRawConsumer;
         this.redisCalculatedProducer = redisCalculatedProducer;
         this.redisCalculatedConsumer = redisCalculatedConsumer;
         this.rateCalculatorService = rateCalculatorService;
         this.kafkaProducerService = kafkaProducerService;
+        this.cache = cache;
     }
 
     @Override
@@ -59,29 +65,29 @@ public class Coordinator implements ICoordinator {
 
     @Override
     public void onRateAvailable(String platform, String rateName, Rate rate) {
-        if (lastRates.putIfAbsent(rateName, rate) != null) {
-            logger.warn("Rate already registered: {}", rateName);
-            return;
+        try {
+            redisRawProducer.publishSingleRate(rate);
+            logger.info("📈 New Rate Available ({}): {}", platform, rate);
+        } catch (RedisException e) {
+            logger.error("❗ Redis error: {}", e.getMessage(), e);
         }
-
-        redisRawProducer.publishRate(rateName, rate);
-        logger.info("📈 New Rate Available ({}): {}", platform, rate);
     }
 
     @Override
     public void onRateUpdate(String platform, String rateName, RateFields fields) {
-        Rate updatedRate = lastRates.computeIfPresent(rateName, (k, existing) -> {
-            existing.setFields(fields);
-            return existing;
-        });
-
-        if (updatedRate == null) {
-            logger.warn("Rate not found for update: {} (call onRateAvailable first)", rateName);
-            return;
+        try {
+            List<Rate> rates = cache.getActiveRates(platform, rateName);
+            logger.debug("🧪 Active rates for {}/{}: {}", platform, rateName, rates.size());//1
+            for (Rate rate : rates) {
+                logger.debug("🧪 Sending rate to Redis: {}", rate);//1
+                if (redisRawProducer.publishSingleRate(rate)) {
+                    cache.markRateToNonActive(platform, rateName, rate);
+                }
+            }
+            logger.info("📊 Rate Updated ({}): {} -> {}", platform, rateName, fields);
+        } catch (RedisException e) {
+            logger.error("❗ Redis error: {}", e.getMessage(), e);
         }
-
-        redisRawProducer.publishRate(rateName, updatedRate);
-        logger.info("📊 Rate Updated ({}): {} -> {}", platform, rateName, fields);
     }
 
 
@@ -97,32 +103,39 @@ public class Coordinator implements ICoordinator {
 
         for (int i = 0; i < defs.length(); i++) {
             final JSONObject def = defs.getJSONObject(i);
-
-            String className  = def.getString("className");
+            String className = def.getString("className");
             String platformName = def.optString("platformName", className);
+            JSONArray subscribeRates = def.optJSONArray("subscribeRates");
 
             pool.submit(() -> {
                 try {
+                    logger.info("🔄 Loading provider → class: {}, platform: {}", className, platformName);
 
-                    IProvider p = (IProvider) Class.forName(className)
+                    IProvider provider = (IProvider) Class.forName(className)
                             .getDeclaredConstructor()
                             .newInstance();
-                    p.setCoordinator(this);
 
-                    /* 1️⃣ — rate listesi önce kuyruğa düşsün */
-                    def.getJSONArray("subscribeRates").forEach(r -> p.subscribe(platformName, r.toString()));
+                    provider.setCoordinator(this);
+                    provider.setCache(this.cache);
 
-                    /* 2️⃣ — provider kendi json’ını okuyarak bağlanır    */
-                    p.connect(platformName, Map.of());         // parametre yok
+                    if (subscribeRates != null) {
+                        for (int j = 0; j < subscribeRates.length(); j++) {
+                            String rate = subscribeRates.getString(j);
+                            provider.subscribe(platformName, rate);
+                        }
+                    }
 
-                    logger.info("🔧 Provider up: {}", className);
+                    provider.connect(platformName, Map.of());
+
+                    logger.info("✅ Provider started → {}", className);
 
                 } catch (Exception e) {
-                    throw new ProviderInitializationException("Cannot instantiate " + className, e);
+                    logger.error("❌ Cannot instantiate or initialize provider: {}", className, e);
                 }
             });
         }
     }
+
 
     public void startRateStreamPipeline() {
         Thread t = new Thread(() -> {
@@ -135,15 +148,18 @@ public class Coordinator implements ICoordinator {
                     Map<String, Rate> calculatedRates = rateCalculatorService.calculate(groupedRawRates);
 
                     // 3. calculated stream’e yaz
-                    redisCalculatedProducer.publishRates(calculatedRates);
+                    redisCalculatedProducer.publishMultipleRates(calculatedRates.values());
 
                     // 4. calculated stream’den oku ve Kafka’ya gönder
                     Map<String, Rate> ratesToSend = redisCalculatedConsumer.readRatesAsMap();
                     kafkaProducerService.sendRatesToKafka(ratesToSend);
-                } catch (KafkaPublishingException e) {
-                    logger.error("❗ Kafka publish error: {}", e.getMessage(), e);
-                }
-                catch (Exception e) {
+                } catch (RedisException e) {
+                    logger.error("❗ Redis error: {}", e.getMessage(), e);
+                } catch (FormulaEngineException e) {
+                    logger.error("❗ Formula engine error: {}", e.getMessage(), e);
+                } catch (KafkaException e) {
+                    logger.error("❗ Kafka error: {}", e.getMessage(), e);
+                } catch (Exception e) {
                     logger.error("❌ Error in stream consumer loop: {}", e.getMessage(), e);
                 }
             }
