@@ -1,67 +1,70 @@
 #############################
-# Filebeat
+# Filebeat – JSON log to ES
 #############################
 
 filebeat.inputs:
-  - type: log
-    enabled: true
-    paths:
-      - /app/Main/coordinator/logs/*.log    # DOSYA YOLUN DOĞRU
-    multiline.pattern: '^\d{4}-\d{2}-\d{2}'
-    multiline.negate: true
-    multiline.match: after
+  - type: filestream
+    paths: [ "/app/Main/coordinator/logs/*.json" ]
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      service: coordinator
+    processors:
+      - decode_json_fields:
+          fields: ["message"]
+          process_array: false
+          max_depth: 1
+          target: ""
+          overwrite_keys: true
+      
 
-# ----------------- Processors -----------------
-processors:
+  - type: filestream
+    paths: [ "/app/Consumers/consumer-postgresql/logs/*.json" ]
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      service: consumer-postgresql
+    processors:
+      - decode_json_fields:
+          fields: ["message"]
+          process_array: false
+          max_depth: 1
+          target: ""
+          overwrite_keys: true
 
-  # 1) Satırı parçalara ayır
-  - dissect:
-      tokenizer: "%{ts} [%{lvl}] [%{thread}] %{logger} - %{msg}"
-      field: "message"
-      target_prefix: ""
 
-  # 2) Sağ-sol boşlukları kırp (INFO␠␠→INFO)
-  - script:
-      lang: javascript
-      id: trim-level
-      source: >
-        function process(event){ 
-          var lvl = event.Get("lvl");
-          if(lvl != null){ event.Put("log.level", lvl.trim().toUpperCase()); }
-          event.Delete("lvl");
-        }
+  - type: filestream
+    paths: [ "/app/Consumers/consumer-elasticsearch/logs/*.json" ]
+    json.keys_under_root: true
+    json.add_error_key: true
+    fields:
+      service: consumer-elasticsearch
+    processors:
+      - decode_json_fields:
+          fields: ["message"]
+          process_array: false
+          max_depth: 1
+          target: ""
+          overwrite_keys: true
 
-  # 3) PIPE format varsa içindeki bid/ask’i çıkar (opsiyonel)
-  - dissect:
-      when.regexp:
-        msg: ".*\\|.*\\|.*\\|.*"
-      tokenizer: "%{log.rateName}|%{log.bid}|%{log.ask}|%{log.ts_iso}"
-      field: "msg"
-      target_prefix: ""
-      ignore_failure: true
 
-  # 4) Sayısal alanları dönüştür
-  - convert:
-      ignore_missing: true
-      fields:
-        - {from: "log.bid", to: "log.bid", type: float}
-        - {from: "log.ask", to: "log.ask", type: float}
 
-  # 5) Zaman damgasını @timestamp alanına yaz
-  - timestamp:
-      field: "ts"
-      layouts: ["2006-01-02 15:04:05.000"]
 
-  # 6) Gereksiz ham alanları sil
-  - drop_fields:
-      fields: ["ts","msg"]
-
-# ----------------- Kibana & ES -----------------
-setup.kibana:
-  host: "kibana:5601"
+#############################
+# Elasticsearch output
+#############################
 
 output.elasticsearch:
-  hosts: ["elasticsearch:9200"]
+  hosts: ["http://elasticsearch:9200"]
+  index: "logs-%{[fields.service]}-%{+yyyy.MM.dd}"
 
-# ILM dev ortamında kapalı tut
+#############################
+# Template & Kibana setup
+#############################
+
+setup.template.name: "logs"
+setup.template.pattern: "logs-*"
 setup.ilm.enabled: false
+
+setup.kibana:
+  host: "kibana:5601"
