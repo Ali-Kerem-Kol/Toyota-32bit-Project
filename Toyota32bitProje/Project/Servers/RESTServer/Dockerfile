@@ -1,17 +1,14 @@
-# 1 Temel imaj
-FROM openjdk:17-jdk-slim
-
-# 2 Uygulama dizini
+# Build
+FROM maven:3.9.4-eclipse-temurin-17 AS builder
 WORKDIR /app/Servers/RESTServer
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
 
-# 3 Timezone ayarı
+# Run
+FROM openjdk:17-jdk-slim
+WORKDIR /app/Servers/RESTServer
 ENV TZ=Europe/Istanbul
-
-# 4 Jar dosyasını kopyala
-COPY target/RESTServer.jar RESTServer.jar
-
-# 5 Portu dışa aç
+COPY --from=builder /app/Servers/RESTServer/target/RESTServer.jar RESTServer.jar
 EXPOSE 8081
-
-# 6 Entry point
 ENTRYPOINT ["java", "-jar", "RESTServer.jar"]

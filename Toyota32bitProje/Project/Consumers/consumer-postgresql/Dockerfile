@@ -1,14 +1,13 @@
-# 1 Temel imaj
-FROM openjdk:17-jdk-slim
-
-# 2 Uygulama dizini
+# Build
+FROM maven:3.9.4-eclipse-temurin-17 AS builder
 WORKDIR /app/Consumers/consumer-postgresql
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
 
-# 3 Timezone ayarı
+# Run
+FROM openjdk:17-jdk-slim
+WORKDIR /app/Consumers/consumer-postgresql
 ENV TZ=Europe/Istanbul
-
-# 4 Jar dosyasını kopyala
-COPY target/consumer-postgresql.jar consumer-postgresql.jar
-
-# 5 Entry point
+COPY --from=builder /app/Consumers/consumer-postgresql/target/consumer-postgresql.jar consumer-postgresql.jar
 ENTRYPOINT ["java", "-jar", "consumer-postgresql.jar"]

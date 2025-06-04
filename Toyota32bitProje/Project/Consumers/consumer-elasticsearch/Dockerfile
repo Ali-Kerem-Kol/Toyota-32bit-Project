@@ -1,14 +1,13 @@
-# 1 Temel imaj
-FROM openjdk:17-jdk-slim
-
-# 2 Uygulama dizini
+# Build
+FROM maven:3.9.4-eclipse-temurin-17 AS builder
 WORKDIR /app/Consumers/consumer-elasticsearch
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
 
-# 3 Timezone ayarı
+# Run
+FROM openjdk:17-jdk-slim
+WORKDIR /app/Consumers/consumer-elasticsearch
 ENV TZ=Europe/Istanbul
-
-# 4 Jar dosyasını kopyala
-COPY target/consumer-elasticsearch.jar consumer-elasticsearch.jar
-
-# 5 Entry point
+COPY --from=builder /app/Consumers/consumer-elasticsearch/target/consumer-elasticsearch.jar consumer-elasticsearch.jar
 ENTRYPOINT ["java", "-jar", "consumer-elasticsearch.jar"]

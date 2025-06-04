@@ -1,14 +1,13 @@
-# 1 Temel imaj
-FROM openjdk:17-jdk-slim
-
-# 2 Uygulama dizini
+# Build
+FROM maven:3.9.4-eclipse-temurin-17 AS builder
 WORKDIR /app/Main/coordinator
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
 
-# 3 Timezone ayarı
+# Run
+FROM openjdk:17-jdk-slim
+WORKDIR /app/Main/coordinator
 ENV TZ=Europe/Istanbul
-
-# 4 Jar dosyasını kopyala
-COPY target/Coordinator-jar-with-dependencies.jar Coordinator-jar-with-dependencies.jar
-
-# 5 Entry point
+COPY --from=builder /app/Main/coordinator/target/Coordinator-jar-with-dependencies.jar Coordinator-jar-with-dependencies.jar
 ENTRYPOINT ["java", "-jar", "Coordinator-jar-with-dependencies.jar"]
