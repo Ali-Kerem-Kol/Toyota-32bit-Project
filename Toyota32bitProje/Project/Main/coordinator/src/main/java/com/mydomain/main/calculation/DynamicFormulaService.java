@@ -76,8 +76,8 @@ public class DynamicFormulaService {
 
         } catch (Exception e) {
             String msg = "JavaScript formula execution failed: " + e.getMessage();
-            logger.debug("❌ {}", msg, e);
-            throw new FormulaEngineException(msg, e);
+            logger.debug("❌ {}", msg);
+            throw new FormulaEngineException(msg);
         }
     }
 }

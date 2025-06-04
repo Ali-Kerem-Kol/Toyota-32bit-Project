@@ -19,7 +19,7 @@ function avgBySuffixMin(ctx, suffix, minCount) {
         }
     }
     if (cnt < minCount) {
-        throw "Yetersiz veri: '" + suffix + "' için en az " + minCount + " kaynak gerekli (mevcut: " + cnt + ")";
+        throw "Insufficient data: at least " + minCount + " sources required for '" + suffix + "' (available: " + cnt + ")";
     }
     return sum / cnt;
 }
