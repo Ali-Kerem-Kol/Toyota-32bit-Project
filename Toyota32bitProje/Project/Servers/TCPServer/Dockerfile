@@ -1,15 +1,17 @@
-# Temel imaj
+# 1 Temel imaj
 FROM openjdk:17-jdk-slim
 
-# Çalışma dizinini ayarla
-WORKDIR /app
+# 2 Uygulama dizini
+WORKDIR /app/Servers/TCPServer
 
-# Maven build sonucu oluşan jar dosyasını kopyala
-COPY target/TCPServer-1.0-SNAPSHOT-jar-with-dependencies.jar app.jar
+# 3 Timezone ayarı
+ENV TZ=Europe/Istanbul
 
-# Konfigürasyon dosyasını imajın içine kopyala (varsayılan olarak projedeki konumdan)
-COPY src/main/java/resources/config.json src/main/java/resources/config.json
+# 4 Jar dosyasını kopyala
+COPY target/TCPServer-jar-with-dependencies.jar TCPServer-jar-with-dependencies.jar
 
+# 5 Portu dışa aç
 EXPOSE 5000
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# 6 Entry point
+ENTRYPOINT ["java", "-jar", "TCPServer-jar-with-dependencies.jar"]

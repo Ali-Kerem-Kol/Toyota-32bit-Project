@@ -1,6 +1,9 @@
 version: '3.9'
 
 services:
+
+  ############# ALTYAPI SERVİSLERİ #############
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.1
     container_name: zookeeper
@@ -56,6 +59,22 @@ services:
     networks:
       - app-network
 
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 50s
+      retries: 5
+    networks:
+      - app-network
+
+
+  ############# VERİTABANI ARA YÜZÜ #############
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: pgadmin
@@ -70,24 +89,18 @@ services:
     networks:
       - app-network
 
-  redis:
-    image: redis:latest
-    container_name: redis
-    ports:
-      - "6379:6379"
-    networks:
-      - app-network
+
+  ############# SAĞLAYICILAR #############
 
   tcp-server:
     build:
       context: ./Servers/TCPServer
       dockerfile: Dockerfile
-    container_name: tcp-server
-    depends_on:
-      postgres-db:
-        condition: service_healthy
+    container_name: TCPServer
     ports:
       - "5000:5000"
+    volumes:
+      - ./Servers/TCPServer/config:/app/Servers/TCPServer/config:ro
     networks:
       - app-network
 
@@ -95,27 +108,16 @@ services:
     build:
       context: ./Servers/RESTServer
       dockerfile: Dockerfile
-    container_name: rest-server
-    depends_on:
-      postgres-db:
-        condition: service_healthy
+    container_name: RESTServer
     ports:
       - "8081:8081"
+    volumes:
+      - ./Servers/RESTServer/config:/app/Servers/RESTServer/config:ro
     networks:
       - app-network
 
-  coordinator:
-    build:
-      context: ./Main/coordinator
-      dockerfile: Dockerfile
-    container_name: coordinator-app
-    depends_on:
-      postgres-db:
-        condition: service_healthy
-    volumes:
-      - ./Main/coordinator/logs:/app/coordinator/logs
-    networks:
-      - app-network
+
+  ############# CONSUMER'LAR #############
 
   consumer-postgresql:
     build:
@@ -123,8 +125,13 @@ services:
       dockerfile: Dockerfile
     container_name: consumer-postgresql
     depends_on:
+      kafka:
+        condition: service_healthy
       postgres-db:
         condition: service_healthy
+    volumes:
+    - ./Consumers/consumer-postgresql/logs:/app/Consumers/consumer-postgresql/logs
+    - ./Consumers/consumer-postgresql/config:/app/Consumers/consumer-postgresql/config:ro
     ports:
       - "8082:8082"
     networks:
@@ -141,27 +148,24 @@ services:
       elasticsearch:
         condition: service_healthy
     environment:
-      # JVM bellek sınırı (isteğe bağlı)
       JAVA_OPTS: "-Xms256m -Xmx512m"
     volumes:
-      # Uygulamanın dönen log dosyalarını host’a al
-      - ./Consumers/consumer-elasticsearch/logs:/app/logs
+      - ./Consumers/consumer-elasticsearch/logs:/app/Consumers/consumer-elasticsearch/logs
+      - ./Consumers/consumer-elasticsearch/config:/app/Consumers/consumer-elasticsearch/config:ro
     networks:
       - app-network
 
 
-  ####################################################################
-  #       Elasticsearch + Kibana + Filebeat (Security enabled)        #
-  ####################################################################
+  ############# LOG + SEARCH SİSTEMİ #############
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.7.1
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false         # Güvenliği kapatıyoruz (kolay kurulum)
+      - xpack.security.enabled=false
       - xpack.security.audit.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m      # Hafıza küçük tutuyoruz (geliştirme)
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ulimits:
       memlock:
         soft: -1
@@ -176,7 +180,6 @@ services:
     networks:
       - app-network
 
-
   kibana:
     image: docker.elastic.co/kibana/kibana:8.7.1
     container_name: kibana
@@ -185,12 +188,10 @@ services:
         condition: service_healthy
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      # Security kapalı olduğu için kullanıcı/şifreye gerek yok
     ports:
       - "5601:5601"
     networks:
       - app-network
-
 
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.7.1
@@ -199,15 +200,46 @@ services:
       elasticsearch:
         condition: service_healthy
     volumes:
-      # 1) coordinator log klasörünü read-only mount ediyoruz
       - ./Main/coordinator/logs:/app/Main/coordinator/logs:ro
-      
-      # 2) Filebeat konfig dosyasını container içine kopyalıyoruz
+      - ./Consumers/consumer-postgresql/logs:/app/Consumers/consumer-postgresql/logs:ro
+      - ./Consumers/consumer-elasticsearch/logs:/app/Consumers/consumer-elasticsearch/logs:ro
       - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-      
     environment:
-      # Windows izin problemi varsa:
       - BEAT_STRICT_PERMS=false
+    networks:
+      - app-network
+
+
+  ############# COORDINATOR #############
+
+  coordinator:
+    build:
+      context: ./Main/coordinator
+      dockerfile: Dockerfile
+    container_name: coordinator
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      filebeat:
+        condition: service_started
+      consumer-postgresql:
+        condition: service_started
+      consumer-elasticsearch:
+        condition: service_started
+      rest-server:
+        condition: service_started
+      tcp-server:
+        condition: service_started
+    volumes:
+      - ./Main/coordinator/logs:/app/Main/coordinator/logs
+      - ./Main/coordinator/config:/app/Main/coordinator/config:ro
+      - ./Main/coordinator/scripts:/app/Main/coordinator/scripts:ro
     networks:
       - app-network
 

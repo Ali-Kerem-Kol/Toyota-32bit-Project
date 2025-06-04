@@ -1,12 +1,17 @@
+# 1 Temel imaj
 FROM openjdk:17-jdk-slim
-WORKDIR /app
 
-# Rest server jar'ını kopyala
-COPY target/rest-server.jar app.jar
+# 2 Uygulama dizini
+WORKDIR /app/Servers/RESTServer
 
-# Konfigürasyon dosyasını kopyala
-COPY src/main/resources/config.json src/main/resources/config.json
+# 3 Timezone ayarı
+ENV TZ=Europe/Istanbul
 
+# 4 Jar dosyasını kopyala
+COPY target/RESTServer.jar RESTServer.jar
+
+# 5 Portu dışa aç
 EXPOSE 8081
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# 6 Entry point
+ENTRYPOINT ["java", "-jar", "RESTServer.jar"]

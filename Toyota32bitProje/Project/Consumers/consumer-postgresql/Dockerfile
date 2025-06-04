@@ -1,19 +1,14 @@
-# Temel imaj olarak OpenJDK 17 kullanıyoruz.
+# 1 Temel imaj
 FROM openjdk:17-jdk-slim
 
-# Çalışma dizinini /app olarak ayarla.
-WORKDIR /app
+# 2 Uygulama dizini
+WORKDIR /app/Consumers/consumer-postgresql
 
-# Maven build sonucu oluşan consumer jar dosyasını imajın içine kopyala.
-COPY target/consumer-postgresql-0.0.1-SNAPSHOT.jar app.jar
+# 3 Timezone ayarı
+ENV TZ=Europe/Istanbul
 
-# Eğer Consumer için ayrıca konfigürasyon dosyaları varsa, onları da kopyalayın.
-# Örneğin:
-COPY src/main/resources/config.json src/main/resources/config.json
-COPY src/main/resources/log4j2.xml src/main/resources/log4j2.xml
+# 4 Jar dosyasını kopyala
+COPY target/consumer-postgresql.jar consumer-postgresql.jar
 
-# Consumer'ın dinleyeceği portu expose et (örneğin 8082).
-EXPOSE 8082
-
-# Container başlatıldığında jar dosyasını çalıştır.
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# 5 Entry point
+ENTRYPOINT ["java", "-jar", "consumer-postgresql.jar"]
