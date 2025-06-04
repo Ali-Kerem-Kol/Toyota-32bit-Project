@@ -13,7 +13,7 @@
   ],
   "calculation": {
     "calculationMethod": "javascript",
-    "formulaFilePath": "/app/scripts/Formula.js"
+    "formulaFilePath": "/app/Main/coordinator/scripts/Formula.js"
   },
   "kafka": {
     "bootstrapServers": "kafka:9092",
@@ -28,18 +28,44 @@
   "redis": {
     "host": "redis",
     "port": 6379,
-    "database": 0,
-    "password": "",
-    "rawTtl": 10,
-    "calculatedTtl": 10,
     "rawStream": "raw_rates",
     "calculatedStream": "calculated_rates",
     "streamMaxLen": 10000,
+    "streamRetentionSeconds": 60,
     "rawGroup": "raw_group",
     "calcGroup": "calc_group",
     "rawConsumer": "raw_consumer",
     "calcConsumer": "calc_consumer",
     "streamReadCount": 10,
     "streamBlockMillis": 5000
+  },
+  "cache": {
+    "size": 10,
+    "filters": {
+      "jumpThresholdFilter": {
+        "enabled": true,
+        "maxJumpPercent": 0.36,
+        "platforms": {
+          "TCP_PLATFORM": {
+            "rates": ["PF1_USDTRY", "PF1_EURUSD"]
+          },
+          "REST_PLATFORM": {
+            "rates": ["PF2_USDTRY", "PF2_EURUSD"]
+          }
+        }
+      },
+      "movingAverageFilter": {
+        "enabled": false,
+        "maxJumpPercent": 0.30,
+        "platforms": {
+          "TCP_PLATFORM": {
+            "rates": ["PF1_GBPUSD"]
+          },
+          "REST_PLATFORM": {
+            "rates": ["PF2_GBPUSD"]
+          }
+        }
+      }
+    }
   }
 }
