@@ -14,8 +14,8 @@
 	<groupId>com.mydomain</groupId>
 	<artifactId>RESTServer</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>RESTServer</name>
-	<description>REST Server Application</description>
+	<name>RESTServerr</name>
+	<description>RESTServer Application</description>
 
 	<properties>
 		<java.version>17</java.version>
@@ -54,7 +54,7 @@
 	</dependencies>
 
 	<build>
-		<finalName>rest-server</finalName>
+		<finalName>RESTServer</finalName>
 
 		<plugins>
 			<plugin>
