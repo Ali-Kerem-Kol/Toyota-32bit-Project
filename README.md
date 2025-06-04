@@ -43,21 +43,27 @@ git clone https://github.com/Ali-Kerem-Kol/Toyota-32bit-Project.git
 cd Toyota-32bit-Project
 ```
 
-2. **Gerekli Konfigürasyon Dosyalarını Kontrol Edin:**
-
-- `Main/coordinator/config/config.json` – `Coordinator` uygulamasının ana config dosyası
-- `Main/coordinator/config/rest-config.json` - `RESTProvider` sınıfının config dosyası
-- `Main/coordinator/config/tcp-config.json` - `TCPProvider` sınıfının config dosyası
-- `Servers/RESTServer/config/config.json` - `RESTServer` uygulamasının config dosyası
-- `Servers/TCPServer/config/config.json` - `TCPServer` uygulamasının config dosyası
-- `Consumers/consumer-postgresql/src/main/resources/application.properties` - `consumer-postgresql` uygulamasının config dosyası
-- `Consumers/consumer-elasticsearch/src/main/resources/application.properties` - `consumer-elasticsearch` uygulamasının config dosyası
-
-3. **Docker ile çalıştırın:**
+2. **Docker ile çalıştırın:**
 
 ```bash
 docker-compose up --build
 ```
+
+## ⚙️ Konfigürasyon Dosyaları Açıklamaları
+
+| Dosya Yolu | Açıklama |
+|------------|----------|
+| `Main/coordinator/config/config.json` | Ana **Coordinator** yapılandırması: Redis & Kafka bağlantı bilgileri, aktif filtre listesi, `Formula.js` dosya yolu vb. |
+| `Main/coordinator/config/rest-config.json` | **RESTProvider** parametreleri |
+| `Main/coordinator/config/tcp-config.json` | **TCPProvider** parametreleri |
+| `Servers/RESTServer/config/config.json` | **RESTServer**’ simülasyon parametreleri |
+| `Servers/TCPServer/config/config.json` | **TCPServer** simülasyon parametreleri |
+| `Consumers/consumer-postgresql/src/main/resources/application.properties` | **consumer-postgresql** Spring Boot ayar dosyası – PostgreSQL, Kafka bilgisi. |
+| `Consumers/consumer-elasticsearch/src/main/resources/application.properties` | **consumer-elasticsearch** Spring Boot ayar dosyası – Elasticsearch, Kafka bilgisi. |
+| `filebeat.yml` | Filebeat giriş/çıkış ayarları: Log yolları ve Elasticsearch hedefi. |
+
+
+
 
 
 ---
