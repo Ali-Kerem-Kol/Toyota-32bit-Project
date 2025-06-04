@@ -81,6 +81,8 @@
 	</dependencies>
 
 	<build>
+		<finalName>Coordinator</finalName>
+
 		<plugins>
 			<!-- Derleyici -->
 			<plugin>
@@ -114,7 +116,6 @@
 							<mainClass>com.mydomain.main.CoordinatorApplication</mainClass>
 						</manifest>
 					</archive>
-					<finalName>app</finalName>
 				</configuration>
 				<executions>
 					<execution>
