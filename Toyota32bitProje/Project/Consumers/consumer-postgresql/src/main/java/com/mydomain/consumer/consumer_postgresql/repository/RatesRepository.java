@@ -1,6 +1,6 @@
-package com.mydomain.consumer.rates_consumer.repository;
+package com.mydomain.consumer.consumer_postgresql.repository;
 
-import com.mydomain.consumer.rates_consumer.model.TblRates;
+import com.mydomain.consumer.consumer_postgresql.model.TblRates;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

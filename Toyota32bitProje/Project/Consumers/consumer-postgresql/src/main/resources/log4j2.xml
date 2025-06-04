@@ -1,58 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="WARN">
 
-    <!--
-       status="WARN" => Log4j2'nin kendi iç loglamasının seviyesini belirler.
-       Geliştirme aşamasında "DEBUG" yaparsanız Log4j2’nin debug mesajlarını da görürsünüz.
-    -->
-
     <Appenders>
 
-        <!-- 1) Konsol Appender -->
+        <!-- Konsol: Her seviye -->
         <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5level] [%t] %c{1} - %msg%n" />
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5level] [%t] %c{1} - %msg%n"/>
         </Console>
 
-        <!-- 2) RollingFile Appender
-             - "logs/rates-consumer.log" dosyasına yazar.
-             - Boyut 10 MB'a ulaşınca rotate eder.
-             - "logs/rates-consumer-YYYY-MM-DD-i.log.gz" olarak arşivler.
-             - En fazla 7 arşiv dosyası saklar.
-        -->
+        <!-- JSON Rolling File: INFO ve üstü -->
         <RollingFile
-                name="RollingFileLog"
-                fileName="logs/consumer-postgresql.log"
-                filePattern="logs/consumer-postgresql-%d{yyyy-MM-dd}-%i.log.gz"
+                name="JsonFile"
+                fileName="logs/consumer-postgresql.json"
+                filePattern="logs/consumer-postgresql-%d{yyyy-MM-dd}-%i.json.gz"
                 append="true">
 
-            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5level] [%t] %c{1} - %msg%n" />
+            <JsonLayout
+                    eventEol="true"
+                    compact="true"
+                    complete="false"
+                    properties="true"
+                    objectMessageAsJsonObject="false"
+                    includeStacktrace="true"
+                    includeMapMessage="true"
+                    includeThreadContext="true"
+                    includeNullDelimiter="false"
+                    includeTimeMillis="true" />
+
+
 
             <Policies>
-                <!-- 10 MB üstü olduğunda yeni bir dosyaya geçilsin -->
-                <SizeBasedTriggeringPolicy size="10MB" />
+                <SizeBasedTriggeringPolicy size="10MB"/>
             </Policies>
+            <DefaultRolloverStrategy max="7"/>
 
-            <!-- Maksimum 7 arşiv sakla -->
-            <DefaultRolloverStrategy max="7" />
+            <Filters>
+                <ThresholdFilter level="info" onMatch="ACCEPT" onMismatch="DENY"/>
+            </Filters>
         </RollingFile>
 
     </Appenders>
 
     <Loggers>
 
-        <!-- Root Logger: info seviyesi ile hem konsola hem dosyaya yazar. -->
+        <Logger name="com.mydomain.consumer.consumer_postgresql" level="trace" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="JsonFile"/>
+        </Logger>
+
         <Root level="info">
             <AppenderRef ref="Console"/>
-            <AppenderRef ref="RollingFileLog"/>
+            <AppenderRef ref="JsonFile"/>
         </Root>
-
-        <!--
-           İsterseniz belirli paket veya sınıf için log seviyesi farklı olsun:
-           <Logger name="com.mydomain.consumer.rates_consumer" level="debug" additivity="false">
-               <AppenderRef ref="Console"/>
-               <AppenderRef ref="RollingFileLog"/>
-           </Logger>
-        -->
 
     </Loggers>
 

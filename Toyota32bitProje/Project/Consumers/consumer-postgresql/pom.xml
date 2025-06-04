@@ -5,29 +5,35 @@
                              https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
+	<!-- Spring Boot parent POM: bağımlılık yönetimi ve plugin yapılandırmaları burada yapılır -->
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
 		<version>3.4.2</version>
-		<relativePath/> <!-- lookup parent from repository -->
+		<relativePath/> <!-- Yerel parent aramasını devre dışı bırak -->
 	</parent>
 
+	<!-- Proje metadata bilgileri -->
 	<groupId>com.mydomain.consumer</groupId>
 	<artifactId>consumer-postgresql</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0.0</version>
 	<name>consumer-postgresql</name>
-	<description>Consumer with PostgreSQL</description>
+	<description>Kafka consumer writing to PostgreSQL</description>
 
+	<!-- Proje genel özellikleri -->
 	<properties>
-		<java.version>17</java.version>
+		<java.version>17</java.version> <!-- Java 17 kullanılıyor -->
+		<maven.compiler.source>${java.version}</maven.compiler.source>
+		<maven.compiler.target>${java.version}</maven.compiler.target>
+		<finalName>consumer-postgresql</finalName> <!-- .jar ismini özelleştir -->
 	</properties>
 
 	<dependencies>
 
-		<!-- 1) Spring Boot Starter Web with Logback excluded -->
+		<!-- Spring Boot Starter: Temel Spring Boot bağımlılıkları -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-web</artifactId>
+			<artifactId>spring-boot-starter-json</artifactId>
 			<exclusions>
 				<exclusion>
 					<groupId>org.springframework.boot</groupId>
@@ -36,7 +42,7 @@
 			</exclusions>
 		</dependency>
 
-		<!-- 2) Spring Boot Starter Data JPA with Logback excluded -->
+		<!-- JPA (Hibernate) + DB bağlantıları -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
@@ -48,33 +54,33 @@
 			</exclusions>
 		</dependency>
 
-		<!-- 3) Spring Boot Starter Log4j2 -->
+		<!-- Log4j2 loglama sistemi -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-log4j2</artifactId>
 		</dependency>
 
-		<!-- 4) Spring Kafka -->
+		<!-- Kafka desteği -->
 		<dependency>
 			<groupId>org.springframework.kafka</groupId>
 			<artifactId>spring-kafka</artifactId>
 		</dependency>
 
-		<!-- PostgreSQL Driver -->
+		<!-- PostgreSQL JDBC sürücüsü -->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Lombok -->
+		<!-- Lombok: boilerplate kodları azaltır -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
 
-		<!-- 5) Spring Boot Starter Test with Logback excluded -->
+		<!-- Test bağımlılıkları -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -87,7 +93,6 @@
 			</exclusions>
 		</dependency>
 
-		<!-- 6) Spring Kafka Test with Logback excluded -->
 		<dependency>
 			<groupId>org.springframework.kafka</groupId>
 			<artifactId>spring-kafka-test</artifactId>
@@ -97,15 +102,21 @@
 					<groupId>ch.qos.logback</groupId>
 					<artifactId>logback-classic</artifactId>
 				</exclusion>
+				<exclusion>
+					<groupId>ch.qos.logback</groupId>
+					<artifactId>logback-core</artifactId>
+				</exclusion>
 			</exclusions>
 		</dependency>
 
 	</dependencies>
 
 	<build>
+		<finalName>${finalName}</finalName> <!-- JAR ismi -->
+
 		<plugins>
 
-			<!-- Maven Compiler Plugin -->
+			<!-- Java 17 desteği ve Lombok'un annotation processor olarak çalışması -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -119,11 +130,12 @@
 				</configuration>
 			</plugin>
 
-			<!-- Spring Boot Maven Plugin -->
+			<!-- Spring Boot Maven Plugin: executable jar üretimi, .original dosyası kontrolü -->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<configuration>
+					<mainClass>com.mydomain.consumer.consumer_postgresql.ConsumerPostgresqlApplication</mainClass>
 					<excludes>
 						<exclude>
 							<groupId>org.projectlombok</groupId>
@@ -131,9 +143,16 @@
 						</exclude>
 					</excludes>
 				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>repackage</goal> <!-- .jar dosyasına bağımlılıkları göm -->
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 
-			<!-- Surefire Plugin: ensure correct classloading -->
+			<!-- Testler için surefire -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
@@ -145,5 +164,4 @@
 
 		</plugins>
 	</build>
-
 </project>

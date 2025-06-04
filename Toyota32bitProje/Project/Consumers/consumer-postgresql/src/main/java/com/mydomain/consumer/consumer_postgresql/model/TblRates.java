@@ -1,6 +1,8 @@
-package com.mydomain.consumer.rates_consumer.model;
+package com.mydomain.consumer.consumer_postgresql.model;
 
 import jakarta.persistence.*;
+import lombok.ToString;
+
 import java.time.LocalDateTime;
 
 /**
@@ -9,6 +11,7 @@ import java.time.LocalDateTime;
  * veritabanına kaydedilmesi amacıyla kullanılır.
  */
 @Entity
+@ToString
 @Table(name = "tbl_rates")
 public class TblRates {
 

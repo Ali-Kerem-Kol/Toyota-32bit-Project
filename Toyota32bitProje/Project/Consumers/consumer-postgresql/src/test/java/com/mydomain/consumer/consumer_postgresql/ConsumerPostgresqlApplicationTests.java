@@ -1,10 +1,10 @@
-package com.mydomain.consumer.rates_consumer;
+package com.mydomain.consumer.consumer_postgresql;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class RatesConsumerApplicationTests {
+class ConsumerPostgresqlApplicationTests {
 
 	@Test
 	void contextLoads() {

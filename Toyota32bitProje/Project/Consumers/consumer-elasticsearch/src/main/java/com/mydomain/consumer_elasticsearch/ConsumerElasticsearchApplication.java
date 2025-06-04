@@ -6,12 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * consumer-elasticsearch mikroservisinin giriş noktası.
  */
-@SpringBootApplication(
-		exclude = {
-				org.springframework.boot.autoconfigure.elasticsearch.ElasticsearchRestClientAutoConfiguration.class,
-				org.springframework.boot.autoconfigure.elasticsearch.ElasticsearchClientAutoConfiguration.class
-		}
-)
+@SpringBootApplication
 public class ConsumerElasticsearchApplication {
 
 	public static void main(String[] args) {
