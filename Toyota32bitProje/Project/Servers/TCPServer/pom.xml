@@ -8,7 +8,7 @@
     <artifactId>TCPServer</artifactId>
     <version>1.0-SNAPSHOT</version>
     <name>TCPServer</name>
-    <description>TCP Server Application</description>
+    <description>TCPServer Application</description>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -25,6 +25,8 @@
     </dependencies>
 
     <build>
+        <finalName>TCPServer</finalName>
+
         <plugins>
             <!-- Fat JAR üretimi için -->
             <plugin>
