@@ -45,7 +45,6 @@ public class DataProcessorService {
             entity.setBid(bid);
             entity.setAsk(ask);
             entity.setRateUpdateTime(istanbulTime);
-            entity.setDbUpdateTime(LocalDateTime.now());
 
             log.debug("✅ Parsed message successfully → rateName={}, bid={}, ask={}, time={}",
                     rateName, bid, ask, istanbulTime);

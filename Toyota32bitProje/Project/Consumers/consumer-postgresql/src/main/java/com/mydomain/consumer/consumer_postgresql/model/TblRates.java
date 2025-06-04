@@ -25,6 +25,11 @@ public class TblRates {
     private LocalDateTime rateUpdateTime;
     private LocalDateTime dbUpdateTime;
 
+    @PrePersist
+    private void onInsert() {
+        this.dbUpdateTime = LocalDateTime.now();
+    }
+
     public Long getId() { return id; }
 
     public String getRateName() { return rateName; }
