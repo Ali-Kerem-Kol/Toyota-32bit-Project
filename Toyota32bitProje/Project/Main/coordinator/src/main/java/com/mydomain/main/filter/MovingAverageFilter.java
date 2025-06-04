@@ -60,13 +60,13 @@ public class MovingAverageFilter implements IRateFilter {
         boolean askOk = askDeviation <= maxJumpPercent;
 
         if (!bidOk || !askOk) {
-            logger.warn("MovingAverageFilter: ❌ REJECTED platform={} rate={} → bidDev={:.2f}%% askDev={:.2f}%% (limit={:.2f}%%)",
+            logger.debug("❌ REJECTED platform={} rate={} → bidDev={:.2f}%% askDev={:.2f}%% (limit={:.2f}%%)",
                     platform, rateName,
                     bidDeviation * 100, askDeviation * 100, maxJumpPercent * 100);
             return false;
         }
 
-        logger.trace("MovingAverageFilter: ✅ PASSED platform={} rate={} → bidDev={:.2f}%% askDev={:.2f}%% (limit={:.2f}%%)",
+        logger.trace("✅ PASSED platform={} rate={} → bidDev={:.2f}%% askDev={:.2f}%% (limit={:.2f}%%)",
                 platform, rateName,
                 bidDeviation * 100, askDeviation * 100, maxJumpPercent * 100);
         return true;

@@ -85,20 +85,20 @@ public class FilterService {
             try {
                 boolean accepted = filter.shouldAccept(platform, rateName, last, candidate, history);
                 if (!accepted) {
-                    logger.warn("❌ FilterService: {} rejected rate (platform={}, rateName={})",
+                    logger.warn("❌ {} rejected rate (platform={}, rateName={})",
                             filter.getClass().getSimpleName(), platform, rateName);
                     return false;
                 } else {
-                    logger.trace("✅ FilterService: {} passed (platform={}, rateName={})",
+                    logger.info("✅ {} passed (platform={}, rateName={})",
                             filter.getClass().getSimpleName(), platform, rateName);
                 }
             } catch (Exception e) {
-                logger.error("FilterService: Exception occurred in {} for platform={}, rateName={} → {}",
+                logger.error("❌ Exception occurred in {} for platform={}, rateName={} → {}",
                         filter.getClass().getSimpleName(), platform, rateName, e.getMessage(), e);
                 return false;
             }
         }
-        logger.trace("All filters passed for rate (platform={}, rateName={}): {}", platform, rateName, candidate);
+        logger.info("✅ All filters passed for rate (platform={}, rateName={}): {}", platform, rateName, candidate);
         return true;
     }
 

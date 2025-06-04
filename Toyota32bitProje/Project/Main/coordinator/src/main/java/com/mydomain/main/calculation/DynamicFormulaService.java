@@ -50,7 +50,7 @@ public class DynamicFormulaService {
 
                 if (scriptEngine == null) {
                     String err = "JavaScript engine not found in JVM.";
-                    logger.error(err);
+                    logger.debug(err);
                     throw new FormulaEngineException(err);
                 }
 
@@ -66,6 +66,7 @@ public class DynamicFormulaService {
 
             if (!(result instanceof double[])) {
                 String err = "JavaScript function 'compute' must return double[] but got: " + result;
+                logger.debug("❌ {}", err);
                 throw new FormulaEngineException(err);
             }
 
@@ -75,7 +76,7 @@ public class DynamicFormulaService {
 
         } catch (Exception e) {
             String msg = "JavaScript formula execution failed: " + e.getMessage();
-            logger.error("❌ {}", msg, e);
+            logger.debug("❌ {}", msg, e);
             throw new FormulaEngineException(msg, e);
         }
     }

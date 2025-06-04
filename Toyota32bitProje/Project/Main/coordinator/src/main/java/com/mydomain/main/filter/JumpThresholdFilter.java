@@ -57,13 +57,13 @@ public class JumpThresholdFilter implements IRateFilter {
         boolean askOk = askJumpPercent <= maxJumpPercent;
 
         if (!bidOk || !askOk) {
-            logger.warn("JumpThresholdFilter: ❌ REJECTED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
+            logger.debug("❌ REJECTED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
                     platform, rateName,
                     bidJumpPercent * 100, askJumpPercent * 100, maxJumpPercent * 100);
             return false;
         }
 
-        logger.trace("JumpThresholdFilter: ✅ PASSED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
+        logger.trace("✅ PASSED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
                 platform, rateName,
                 bidJumpPercent * 100, askJumpPercent * 100, maxJumpPercent * 100);
         return true;

@@ -107,7 +107,7 @@ public class KafkaProducerService {
 
         try {
             producer.send(record).get(requestTimeoutMs, TimeUnit.MILLISECONDS);
-            logger.debug("✅ Kafka OK (topic: {}) → {}", topicName, payload);
+            logger.info("✅ Kafka OK (topic: {}) → {}", topicName, payload);
         } catch (Exception e) {
             closeProducerSilently();
             throw new KafkaException("Kafka send failed", payload, e);
