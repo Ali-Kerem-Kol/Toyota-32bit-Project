@@ -61,6 +61,14 @@ public class Rate {
         this.status = status;
     }
 
+    // Copy Constructor
+    public Rate(Rate other) {
+        this.rateName = other.rateName;
+        this.fields = new RateFields(other.fields);   // deep copy
+        this.status = new RateStatus(other.status);   // deep copy
+    }
+
+
     /**
      * Kuranın adını döner.
      *

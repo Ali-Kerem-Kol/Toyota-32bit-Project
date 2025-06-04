@@ -37,6 +37,13 @@ public class RateStatus {
         this.isUpdated = isUpdated;
     }
 
+    // Copy Constructor
+    public RateStatus(RateStatus other) {
+        this.isActive = other.isActive;
+        this.isUpdated = other.isUpdated;
+    }
+
+
     /**
      * Kurun aktiflik durumunu döner.
      *

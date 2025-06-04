@@ -47,6 +47,14 @@ public class RateFields {
         this.timestamp = String.valueOf(timestamp);
     }
 
+    // Copy Constructor
+    public RateFields(RateFields other) {
+        this.bid = other.bid;
+        this.ask = other.ask;
+        this.timestamp = other.timestamp;
+    }
+
+
     /**
      * Alış fiyatını döner.
      *
