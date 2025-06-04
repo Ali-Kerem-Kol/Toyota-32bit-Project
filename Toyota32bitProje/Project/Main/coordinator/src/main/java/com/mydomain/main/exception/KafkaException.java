@@ -1,9 +1,9 @@
 package com.mydomain.main.exception;
 
-public class KafkaPublishingException extends RuntimeException {
+public class KafkaException extends RuntimeException {
     private final String payload;          // debugging için
 
-    public KafkaPublishingException(String msg, String payload, Throwable cause) {
+    public KafkaException(String msg, String payload, Throwable cause) {
         super(msg, cause);
         this.payload = payload;
     }
