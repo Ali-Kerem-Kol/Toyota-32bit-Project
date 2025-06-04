@@ -1,8 +1,8 @@
 # Toyota 32bit Project
 
-Bu proje, finansal veri sağlayıcılardan (REST ve TCP protokolüyle) alınan döviz kuru verilerinin gerçek zamanlı olarak toplanmasını, hesaplanmasını ve Kafka üzerinden dış sistemlere iletilmesini amaçlayan bir mikroservis mimarisi üzerine kuruludur. Uygulama, gelen verileri Redis Stream altyapısıyla yönetir ve kur hesaplamalarını JavaScript ile dinamik olarak gerçekleştiren bir hesaplayıcı modüle sahiptir. Hesaplanan sonuçlar hem Kafka'ya gönderilir hem de ikinci bir Redis Stream üzerinde saklanır.
+Bu proje, farklı veri sağlayıcılardan (TCP & REST) döviz kuru verilerini gerçek zamanlı olarak toplayıp, filtreleyip, hesaplayan ve bu verileri dış sistemlere (Kafka, PostgreSQL, Elasticsearch) aktaran mikroservis tabanlı bir backend uygulamasıdır. 
+Uygulama, Redis Stream altyapısı ile veri akışını kontrol eder, kur hesaplamalarını dinamik olarak JavaScript ile yapar ve dağıtık sistemler arasında senkronizasyonu sağlar.
 
-Sistem, platformlar arası esneklik sağlayarak veri akışındaki kopmaları tolere edebilir ve merkezi koordinatör yapısı sayesinde dağıtık bileşenleri senkronize eder.
 
 ---
 
@@ -13,16 +13,25 @@ Sistem, platformlar arası esneklik sağlayarak veri akışındaki kopmaları to
 - **Redis & Redis Stream**
 - **Apache Kafka**
 - **PostgreSQL**
-- **ElasticSearch**
+- **ElasticSearch & Kibana**
+- **Log4j2 + Filebeat**
 - **Docker & Docker Compose**
-- **Log4j2 + Filebeat + Kibana**
+- **Javascript**
 
 ---
 
 ## 🧱 Proje Mimarisi
 
 ![Proje Mimarisi](Toyota32bitProje/Mimari.png)
-
+Mimari bileşenler:
+- `TCPProvider`, `RESTProvider`: Farklı kaynaklardan veri toplar
+- `RateCache`: Platform + rate bazlı geçmişi saklar
+- `FilterService`: JumpThresholdFilter, MovingAverageFilter ile veri kalitesini kontrol eder
+- `RedisProducer/Consumer`: Stream yazımı/okuması
+- `RateCalculatorService`: Dinamik `Formula.js` dosyasını çalıştırır
+- `KafkaProducerService`: Hesaplanan verileri Kafka'ya gönderir
+- `consumer-postgresql`, `consumer-elasticsearch`: Kafka'dan veri okuyup veritabanlarına yazar
+- `Log4j2 + Filebeat`: JSON loglama ve merkezi izleme
 ---
 
 ## 🚀 Kurulum
@@ -40,11 +49,20 @@ cd Toyota-32bit-Project
 docker-compose up --build
 ```
 
-3. **Gerekli Konfigürasyon Dosyalarını Kontrol Edin:**
+## ⚙️ Konfigürasyon Dosyaları Açıklamaları
 
-- "config.json" – Hangi kurların hangi platformlardan alınacağı burada belirtilir.
-- "log4j2.xml" – Log yapısı bu dosya üzerinden ayarlanır.
-- "filebeat.yml" – Log'ların Elasticsearch'e aktarımı için yapılandırma.
+| Dosya Yolu | Açıklama |
+|------------|----------|
+| `Main/coordinator/config/config.json` | Ana **Coordinator** yapılandırması: Redis & Kafka bağlantı bilgileri, aktif filtre listesi, `Formula.js` dosya yolu vb. |
+| `Main/coordinator/config/rest-config.json` | **RESTProvider** parametreleri |
+| `Main/coordinator/config/tcp-config.json` | **TCPProvider** parametreleri |
+| `Servers/RESTServer/config/config.json` | **RESTServer**’ simülasyon parametreleri |
+| `Servers/TCPServer/config/config.json` | **TCPServer** simülasyon parametreleri |
+| `Consumers/consumer-postgresql/src/main/resources/application.properties` | **consumer-postgresql** Spring Boot ayar dosyası – PostgreSQL, Kafka bilgisi. |
+| `Consumers/consumer-elasticsearch/src/main/resources/application.properties` | **consumer-elasticsearch** Spring Boot ayar dosyası – Elasticsearch, Kafka bilgisi. |
+| `filebeat.yml` | Filebeat giriş/çıkış ayarları: Log yolları ve Elasticsearch hedefi. |
+
+
 
 
 
