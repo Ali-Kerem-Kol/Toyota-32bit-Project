@@ -1,9 +1,7 @@
 package com.mydomain.main.coordinator;
 
-import com.mydomain.main.cache.RateCache;
 import com.mydomain.main.calculation.RateCalculatorService;
-import com.mydomain.main.config.ConfigReader;
-import com.mydomain.main.exception.FormulaEngineException;
+import com.mydomain.main.exception.CalculationException;
 import com.mydomain.main.exception.KafkaException;
 import com.mydomain.main.exception.RedisException;
 import com.mydomain.main.kafka.KafkaProducerService;
@@ -11,91 +9,63 @@ import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import com.mydomain.main.model.RateStatus;
 import com.mydomain.main.provider.IProvider;
-import com.mydomain.main.redis.RedisConsumerService;
-import com.mydomain.main.redis.RedisProducerService;
+import com.mydomain.main.redis.RedisService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Coordinator implements ICoordinator {
 
-    private static final Logger logger = LogManager.getLogger(Coordinator.class);
+    private static final Logger log = LogManager.getLogger(Coordinator.class);
 
-    private final RedisProducerService redisRawProducer;
-    private final RedisConsumerService redisRawConsumer;
-    private final RedisProducerService redisCalculatedProducer;
-    private final RedisConsumerService redisCalculatedConsumer;
-
+    private final RedisService redisService;
     private final RateCalculatorService rateCalculatorService;
     private final KafkaProducerService kafkaProducerService;
 
-    private final RateCache cache;
+    private ScheduledExecutorService scheduler;
 
-    public Coordinator(RedisProducerService redisRawProducer,
-                       RedisConsumerService redisRawConsumer,
-                       RedisProducerService redisCalculatedProducer,
-                       RedisConsumerService redisCalculatedConsumer,
+    public Coordinator(RedisService redisService,
                        RateCalculatorService rateCalculatorService,
-                       KafkaProducerService kafkaProducerService,
-                       RateCache cache) {
-        this.redisRawProducer = redisRawProducer;
-        this.redisRawConsumer = redisRawConsumer;
-        this.redisCalculatedProducer = redisCalculatedProducer;
-        this.redisCalculatedConsumer = redisCalculatedConsumer;
+                       KafkaProducerService kafkaProducerService) {
+        this.redisService = redisService;
         this.rateCalculatorService = rateCalculatorService;
         this.kafkaProducerService = kafkaProducerService;
-        this.cache = cache;
     }
 
     @Override
     public void onConnect(String platformName, Boolean status) {
-        logger.info("🔗 {} connection status: {}", platformName, status ? "Connected" : "Disconnected");
+        log.info("🔗 {} connection status: {}", platformName, status ? "Connected" : "Disconnected");
     }
 
     @Override
     public void onDisConnect(String platformName, Boolean status) {
-        logger.info("🔗 {} connection status: {}", platformName, status ? "Connected" : "Disconnected");
+        log.info("🔗 {} connection status: {}", platformName, status ? "Connected" : "Disconnected");
     }
 
     @Override
     public void onRateAvailable(String platform, String rateName, Rate rate) {
-        try {
-            redisRawProducer.publishSingleRate(rate);
-            logger.info("📈 New Rate Available ({}): {}", platform, rate);
-        } catch (RedisException e) {
-            logger.error("❗ Redis error: {}", e.getMessage(), e);
-        }
+        log.info("📈 New Rate Available ({}): {}", platform, rate);
     }
 
     @Override
-    public void onRateUpdate(String platform, String rateName, RateFields fields) {
-        try {
-            List<Rate> rates = cache.getActiveRates(platform, rateName);
-            logger.debug("🧪 Active rates for {}/{}: {}", platform, rateName, rates.size());//1
-            for (Rate rate : rates) {
-                logger.debug("🧪 Sending rate to Redis: {}", rate);//1
-                if (redisRawProducer.publishSingleRate(rate)) {
-                    cache.markRateToNonActive(platform, rateName, rate);
-                }
-            }
-            logger.info("📊 Rate Updated ({}): {} -> {}", platform, rateName, fields);
-        } catch (RedisException e) {
-            logger.error("❗ Redis error: {}", e.getMessage(), e);
-        }
+    public void onRateUpdate(String platformName, String rateName, RateFields fields) {
+        log.info("🔄 Rate Updated ({}): {} -> {}", platformName, rateName, fields);
     }
-
 
     @Override
     public void onRateStatus(String platformName, String rateName, RateStatus rateStatus) {
-        logger.info("ℹ️ Rate Status Updated ({}): {} -> {}", platformName, rateName, rateStatus);
+        log.info("ℹ️ Rate Status Updated ({}): {} -> {}", platformName, rateName, rateStatus);
     }
-
 
     public void loadProviders(JSONArray defs) {
         ExecutorService pool = Executors.newCachedThreadPool();
@@ -109,14 +79,14 @@ public class Coordinator implements ICoordinator {
 
             pool.submit(() -> {
                 try {
-                    logger.info("🔄 Loading provider → class: {}, platform: {}", className, platformName);
+                    log.info("🔄 Loading provider → class: {}, platform: {}", className, platformName);
 
                     IProvider provider = (IProvider) Class.forName(className)
                             .getDeclaredConstructor()
                             .newInstance();
 
                     provider.setCoordinator(this);
-                    provider.setCache(this.cache);
+                    provider.setRedis(redisService);
 
                     if (subscribeRates != null) {
                         for (int j = 0; j < subscribeRates.length(); j++) {
@@ -127,49 +97,71 @@ public class Coordinator implements ICoordinator {
 
                     provider.connect(platformName, Map.of());
 
-                    logger.info("✅ Provider started → {}", className);
+                    log.info("✅ Provider started → {}", className);
 
                 } catch (Exception e) {
-                    logger.error("❌ Cannot instantiate or initialize provider: {}", className, e);
+                    log.error("❌ Cannot instantiate or initialize provider: {}", className, e);
                 }
             });
         }
     }
 
 
-    public void startRateStreamPipeline() {
-        Thread t = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    // 1. raw_rates stream'den verileri oku ve grupla
-                    Map<String, List<Rate>> groupedRawRates = redisRawConsumer.readAndGroupRatesByShortName();
 
-                    // 2. Hesapla
-                    Map<String, Rate> calculatedRates = rateCalculatorService.calculate(groupedRawRates);
+    /**
+     * Sürekli olarak hesaplama ve publish işlemlerini yürüten worker thread başlatır.
+     * Her 100 ms'de bir çalışır.
+     */
+    public void startCalculationWorker(long intervalMs) {
+        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "rate-calc-worker");
+            t.setDaemon(true); // Uygulama kapanırken thread'ı otomatik sonlandırır
+            return t;
+        });
 
-                    // 3. calculated stream’e yaz
-                    redisCalculatedProducer.publishMultipleRates(calculatedRates.values());
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                // 1. Aktif verileri topla
+                Map<String, Map<String, Rate>> activeRawRates = redisService.getMostRecentAndActiveRawRates();
 
-                    // 4. calculated stream’den oku ve Kafka’ya gönder
-                    Map<String, Rate> ratesToSend = redisCalculatedConsumer.readRatesAsMap();
-                    kafkaProducerService.sendRatesToKafka(ratesToSend);
-                } catch (RedisException e) {
-                    logger.error("❗ Redis error: {}", e.getMessage(), e);
-                } catch (FormulaEngineException e) {
-                    logger.error("❗ Formula engine error: {}", e.getMessage(), e);
-                } catch (KafkaException e) {
-                    logger.error("❗ Kafka error: {}", e.getMessage(), e);
-                } catch (Exception e) {
-                    logger.error("❌ Error in stream consumer loop: {}", e.getMessage(), e);
-                }
+                // 2. Hesapla
+                List<Rate> result = rateCalculatorService.calculate(activeRawRates);
+
+                // 3. Kullanılan raw'ları pasifleştir
+                if (!result.isEmpty()) redisService.deactivateRawRates(activeRawRates);
+
+                // 4. Hesaplananları Redis'e yaz
+                for (Rate calculatedRate : result)
+                    redisService.putCalculatedRate(calculatedRate.getRateName(), calculatedRate);
+
+                // 5. Son hesaplananları Kafka'ya gönder
+                List<Rate> lastCalculatedRates = redisService.getMostRecentAndActiveCalculatedRates();
+                List<Rate> successfullySent = kafkaProducerService.sendRatesToKafka(lastCalculatedRates);
+
+                // 6. Kafka'ya gönderilenleri pasifleştir
+                redisService.deactivateCalculatedRates(successfullySent);
+
+            } catch (RedisException e) {
+                log.error("❌ Redis hatası (worker): {}", e.getMessage());
+            } catch (CalculationException e) {
+                log.error("❌ Hesaplama hatası (worker): {}", e.getMessage());
+            } catch (KafkaException e) {
+                log.error("❌ Kafka hatası (worker): {}", e.getMessage());
+            } catch (Exception e) {
+                log.error("❌ Beklenmeyen hata (worker): {}", e.getMessage(), e);
             }
-        }, "stream-reader-thread");
+        }, 0, intervalMs, TimeUnit.MILLISECONDS);
 
-        t.setDaemon(true);
-        t.start();
+        log.info("🚀 Rate Calculation Worker başlatıldı (interval: {} ms)", intervalMs);
     }
 
-
+    // Uygulama kapanışında worker'ı kapatmak için:
+    public void shutdownWorker() {
+        if (scheduler != null) {
+            scheduler.shutdown();
+            log.info("🛑 Rate Calculation Worker durduruldu.");
+        }
+    }
 
 
 
