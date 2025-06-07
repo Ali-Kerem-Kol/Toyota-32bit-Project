@@ -1,47 +1,82 @@
-// myFormula.js   –  Çalışan sürümün küçük rötüşlü hâli (ES5)
+// Formula.js - Kurları hesaplamak için ES5 uyumlu JavaScript fonksiyonu
+// Bu dosya, DynamicFormulaService tarafından çağrılır ve bid/ask değerlerini döndürür.
 
-/* ---------- yardımcılar (ES5, endsWith yok) --------------------------- */
-function endsWith(str, suf) {
-    return str.indexOf(suf, str.length - suf.length) !== -1;
+/* =========================================================================
+   YARDIMCI FONKSİYONLAR
+   ========================================================================= */
+
+/**
+ * Bir string'in belirli bir sonek ile bitip bitmediğini kontrol eder.
+ * ES5'te native endsWith fonksiyonu olmadığından manuel implementasyon kullanılır.
+ * @param {string} inputString - Kontrol edilecek string
+ * @param {string} suffix - Aranan sonek
+ * @returns {boolean} - String sonek ile bitiyorsa true, aksi halde false
+ */
+function endsWith(inputString, suffix) {
+    return inputString.indexOf(suffix, inputString.length - suffix.length) !== -1;
 }
-/* context’te anahtarı suf ile bitenlerin ortalamasını döner; veri yoksa hata */
-function avgBySuffixMin(ctx, suffix, minCount) {
-    var it = ctx.keySet().iterator();
-    var sum = 0.0, cnt = 0;
-    while (it.hasNext()) {
-        var k = String(it.next());
-        if (endsWith(k, suffix)) {
-            var v = ctx.get(k);
-            if (v != null) {
-                sum += v;
-                cnt++;
+
+/**
+ * Context'te anahtarı verilen sonek ile biten değerlerin ortalamasını hesaplar.
+ * Minimum veri sayısına ulaşılmazsa hata fırlatır.
+ * @param {Object} context - Veri içeren context map
+ * @param {string} keySuffix - Anahtar soneki (örn. "UsdtryBid")
+ * @param {number} minimumCount - Minimum gerekli veri sayısı
+ * @returns {number} - Hesaplanan ortalama değer
+ * @throws {string} - Yetersiz veri varsa hata mesajı
+ */
+function calculateAverageBySuffix(context, keySuffix, minimumCount) {
+    var keyIterator = context.keySet().iterator();
+    var totalSum = 0.0;
+    var dataCount = 0;
+
+    while (keyIterator.hasNext()) {
+        var currentKey = String(keyIterator.next());
+        if (endsWith(currentKey, keySuffix)) {
+            var currentValue = context.get(currentKey);
+            if (currentValue != null) {
+                totalSum += currentValue;
+                dataCount++;
             }
         }
     }
-    if (cnt < minCount) {
-        throw "Insufficient data: at least " + minCount + " sources required for '" + suffix + "' (available: " + cnt + ")";
+
+    if (dataCount < minimumCount) {
+        throw "Insufficient data: at least " + minimumCount + " sources required for '" + keySuffix + "' (available: " + dataCount + ")";
     }
-    return sum / cnt;
+
+    return totalSum / dataCount;
 }
-/* ---------- ana fonksiyon --------------------------------------------- */
+
+/* =========================================================================
+   ANA HESAPLAMA FONKSİYONU
+   ========================================================================= */
+
+/**
+ * Context'teki verilere göre kurları hesaplar ve bid/ask değerlerini döndürür.
+ * USDTRY için direkt ortalama, diğer kurlar için çapraz hesaplama yapar.
+ * @param {Object} context - Hesaplama için gerekli veriler (currencyCode, bid/ask)
+ * @returns {double[]} - [bid, ask] dizisi
+ */
 function compute(context) {
+    // Hesaplanacak kur kodunu al (örn. "USDTRY", "EURUSD")
+    var currencyCode = String(context.get("calcName"));
 
-    var calcName = String(context.get("calcName"));   // "USDTRY", "EURUSD" …
+    // 1. USDTRY'nin bid ve ask ortalamalarını hesapla (her zaman gerekli)
+    var usdTryBid = calculateAverageBySuffix(context, "UsdtryBid", 2);
+    var usdTryAsk = calculateAverageBySuffix(context, "UsdtryAsk", 2);
 
-    /* 1) Her hesaplama USDTRY ortalamasını ister */
-    var usdBid = avgBySuffixMin(context, "UsdtryBid",2);
-    var usdAsk = avgBySuffixMin(context, "UsdtryAsk",2);
-
-    /* 2) Doğrudan USDTRY ise hemen dön */
-    if (calcName === "USDTRY") {
-        return Java.to([ usdBid, usdAsk ], "double[]");
+    // 2. Eğer hesaplanacak kur USDTRY ise, direkt bu değerleri döndür
+    if (currencyCode === "USDTRY") {
+        return Java.to([usdTryBid, usdTryAsk], "double[]");
     }
 
-    /* 3) Diğer tüm *USD kurları (EURUSD, GBPUSD, JPYUSD …) */
-    var camel = calcName.substring(0,1).toUpperCase() +
-                calcName.substring(1).toLowerCase();            // EURUSD→Eurusd
-    var bid = avgBySuffixMin(context, camel + "Bid",2);
-    var ask = avgBySuffixMin(context, camel + "Ask",2);
+    // 3. Diğer kurlar için (örn. EURUSD, DOGEUSD) çapraz hesaplama yap
+    var currencyKey = currencyCode.substring(0, 1).toUpperCase() +
+                     currencyCode.substring(1).toLowerCase(); // EURUSD → Eurusd
+    var currencyBid = calculateAverageBySuffix(context, currencyKey + "Bid", 2);
+    var currencyAsk = calculateAverageBySuffix(context, currencyKey + "Ask", 2);
 
-    return Java.to([ usdBid * bid, usdAsk * ask ], "double[]");
+    // Çapraz kur hesaplama: USDTRY * XXXUSD
+    return Java.to([usdTryBid * currencyBid, usdTryAsk * currencyAsk], "double[]");
 }
