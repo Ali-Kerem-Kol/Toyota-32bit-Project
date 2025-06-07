@@ -10,13 +10,14 @@ import org.apache.logging.log4j.Logger;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.*;
 
 public class KafkaProducerService {
 
-    private static final Logger logger = LogManager.getLogger(KafkaProducerService.class);
+    private static final Logger log = LogManager.getLogger(KafkaProducerService.class);
 
     private volatile KafkaProducer<String, String> producer;
 
@@ -26,7 +27,6 @@ public class KafkaProducerService {
     private final int retries;
     private final int deliveryTimeoutMs;
     private final int requestTimeoutMs;
-    private final long reinitPeriodSec;
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -48,7 +48,6 @@ public class KafkaProducerService {
         this.retries = retries;
         this.deliveryTimeoutMs = deliveryTimeoutMs;
         this.requestTimeoutMs = requestTimeoutMs;
-        this.reinitPeriodSec = reinitPeriodSec;
 
         initProducer();
         scheduler.scheduleAtFixedRate(this::recoverProducerIfClosed, reinitPeriodSec, reinitPeriodSec, TimeUnit.SECONDS);
@@ -67,52 +66,83 @@ public class KafkaProducerService {
 
             producer = new KafkaProducer<>(props);
 
-            logger.info("✅ KafkaProducer READY  → bootstrap={}, topic={}, acks={}, retries={}, deliveryTimeoutMs={}, requestTimeoutMs={}",
+            log.info("✅ KafkaProducer READY → bootstrap={}, topic={}, acks={}, retries={}, deliveryTimeoutMs={}, requestTimeoutMs={}",
                     bootstrapServers, topicName, acks, retries, deliveryTimeoutMs, requestTimeoutMs);
         } catch (Exception e) {
             producer = null;
-            logger.warn("⚠️ KafkaProducer INIT FAILED: {}", e.getMessage());
+            log.warn("⚠️ KafkaProducer INIT FAILED: {}", e.getMessage());
         }
     }
 
     private void recoverProducerIfClosed() {
         if (producer != null) return;
-        logger.info("♻️ Re-initializing Kafka producer...");
+        log.info("♻️ Re-initializing Kafka producer...");
         initProducer();
     }
 
-    public void sendRatesToKafka(Map<String, Rate> rates) {
-        if (rates == null || rates.isEmpty()) {
-            logger.debug("⏳ Skipping Kafka send: rate map is empty or null.");
-            return;
-        }
-
-        rates.forEach(this::sendRateToKafka);
-    }
-
-    private void sendRateToKafka(String rateName, Rate rate) {
+    public void sendRateToKafka(Rate rate) {
         if (producer == null) {
-            throw new KafkaException("Kafka producer is null", rateName, null);
+            throw new KafkaException("Kafka producer is null", rate.getRateName(), null);
         }
 
         String timestamp = OffsetDateTime.now(ZoneOffset.UTC)
                 .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+
         String payload = String.format("%s|%f|%f|%s",
-                rateName,
+                rate.getRateName(),
                 rate.getFields().getBid(),
                 rate.getFields().getAsk(),
                 timestamp);
 
-        ProducerRecord<String, String> record = new ProducerRecord<>(topicName, payload);
+        ProducerRecord<String, String> record = new ProducerRecord<>(topicName, rate.getRateName(), payload);
 
         try {
             producer.send(record).get(requestTimeoutMs, TimeUnit.MILLISECONDS);
-            logger.info("✅ Kafka OK (topic: {}) → {}", topicName, payload);
+            log.info("✅ Kafka OK → {}", payload);
         } catch (Exception e) {
             closeProducerSilently();
             throw new KafkaException("Kafka send failed", payload, e);
         }
     }
+
+    public List<Rate> sendRatesToKafka(List<Rate> rates) {
+        List<Rate> successfullySent = new ArrayList<>();
+
+        if (rates == null || rates.isEmpty()) {
+            log.debug("⏳ Skipping Kafka send: rate list is empty.");
+            return successfullySent;
+        }
+
+        for (Rate rate : rates) {
+            if (producer == null) {
+                log.error("❌ Kafka producer unavailable, skipping rate: {}", rate.getRateName());
+                continue;
+            }
+
+            String timestamp = OffsetDateTime.now(ZoneOffset.UTC)
+                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+
+            String payload = String.format("%s|%f|%f|%s",
+                    rate.getRateName(),
+                    rate.getFields().getBid(),
+                    rate.getFields().getAsk(),
+                    timestamp);
+
+            ProducerRecord<String, String> record = new ProducerRecord<>(topicName, rate.getRateName(), payload);
+
+            try {
+                producer.send(record).get(requestTimeoutMs, TimeUnit.MILLISECONDS);
+                log.info("✅ Kafka OK → {}", payload);
+                successfullySent.add(rate);
+            } catch (Exception e) {
+                log.error("❌ Kafka send failed for rate: {} → {}", rate.getRateName(), e.getMessage());
+                closeProducerSilently(); // force reinit
+            }
+        }
+
+        return successfullySent;
+    }
+
 
     private void closeProducerSilently() {
         try {
