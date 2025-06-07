@@ -15,7 +15,7 @@ public class RateFields {
     private double ask;
 
     /** Zaman damgası, ISO formatlı metin */
-    private String timestamp;
+    private long timestamp;
 
     /**
      * JSON verisinden deseralize etmek için kullanılan yapıcı metot.
@@ -27,25 +27,12 @@ public class RateFields {
     public RateFields(
             @JsonProperty("bid") double bid,
             @JsonProperty("ask") double ask,
-            @JsonProperty("timestamp") String timestamp) {
+            @JsonProperty("timestamp") long timestamp) {
         this.bid = bid;
         this.ask = ask;
         this.timestamp = timestamp;
     }
 
-    /**
-     * Zaman damgasını milisaniye cinsinden uzun değer olarak alıp
-     * metne çeviren yardımcı yapıcı metot.
-     *
-     * @param bid       Alış fiyatı
-     * @param ask       Satış fiyatı
-     * @param timestamp Milisaniye cinsinden zaman damgası
-     */
-    public RateFields(double bid, double ask, long timestamp) {
-        this.bid = bid;
-        this.ask = ask;
-        this.timestamp = String.valueOf(timestamp);
-    }
 
     // Copy Constructor
     public RateFields(RateFields other) {
@@ -96,7 +83,7 @@ public class RateFields {
      *
      * @return timestamp
      */
-    public String getTimestamp() {
+    public long getTimestamp() {
         return timestamp;
     }
 
@@ -105,7 +92,7 @@ public class RateFields {
      *
      * @param timestamp Yeni zaman damgası
      */
-    public void setTimestamp(String timestamp) {
+    public void setTimestamp(long timestamp) {
         this.timestamp = timestamp;
     }
 

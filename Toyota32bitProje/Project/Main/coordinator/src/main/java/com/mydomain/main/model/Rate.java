@@ -42,7 +42,7 @@ public class Rate {
             @JsonProperty("rateName") String rateName,
             @JsonProperty("bid") double bid,
             @JsonProperty("ask") double ask,
-            @JsonProperty("timestamp") String timestamp) {
+            @JsonProperty("timestamp") long timestamp) {
         this.rateName = rateName;
         this.fields = new RateFields(bid, ask, timestamp);
         this.status = new RateStatus(true, true);
