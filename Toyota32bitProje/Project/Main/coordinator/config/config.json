@@ -3,12 +3,12 @@
     {
       "className": "com.mydomain.main.provider.TCPProvider",
       "platformName": "TCP_PLATFORM",
-      "subscribeRates": ["PF1_USDTRY","PF1_EURUSD","PF1_GBPUSD"]
+      "subscribeRates": ["USDTRY","EURUSD","GBPUSD"]
     },
     {
       "className": "com.mydomain.main.provider.RESTProvider",
       "platformName": "REST_PLATFORM",
-      "subscribeRates": ["PF2_USDTRY","PF2_EURUSD","PF2_GBPUSD"]
+      "subscribeRates": ["USDTRY","EURUSD","GBPUSD"]
     }
   ],
   "calculation": {
@@ -22,50 +22,28 @@
     "retries": 3,
     "deliveryTimeoutMs": 30000,
     "requestTimeoutMs": 15000,
-    "reinitPeriodSec": 5,
-    "lingerMs": 0
+    "reinitPeriodSec": 5
   },
   "redis": {
     "host": "redis",
     "port": 6379,
-    "rawStream": "raw_rates",
-    "calculatedStream": "calculated_rates",
-    "streamMaxLen": 10000,
-    "streamRetentionSeconds": 60,
-    "rawGroup": "raw_group",
-    "calcGroup": "calc_group",
-    "rawConsumer": "raw_consumer",
-    "calcConsumer": "calc_consumer",
-    "streamReadCount": 10,
-    "streamBlockMillis": 5000
+    "ttlSeconds": 10,
+    "maxListSize": 10
   },
-  "cache": {
-    "size": 10,
-    "filters": {
-      "jumpThresholdFilter": {
-        "enabled": true,
-        "maxJumpPercent": 0.36,
-        "platforms": {
-          "TCP_PLATFORM": {
-            "rates": ["PF1_USDTRY", "PF1_EURUSD"]
-          },
-          "REST_PLATFORM": {
-            "rates": ["PF2_USDTRY", "PF2_EURUSD"]
-          }
-        }
-      },
-      "movingAverageFilter": {
-        "enabled": false,
-        "maxJumpPercent": 0.30,
-        "platforms": {
-          "TCP_PLATFORM": {
-            "rates": ["PF1_GBPUSD"]
-          },
-          "REST_PLATFORM": {
-            "rates": ["PF2_GBPUSD"]
-          }
+  "filters": {
+    "jumpThresholdFilter": {
+      "className": "com.mydomain.main.filter.JumpThresholdFilter",
+      "enabled": true,
+      "platforms": {
+        "TCP_PLATFORM": {
+          "rates": ["USDTRY", "EURUSD"]
+        },
+        "REST_PLATFORM": {
+          "rates": ["USDTRY", "EURUSD"]
         }
       }
     }
   }
 }
+
+

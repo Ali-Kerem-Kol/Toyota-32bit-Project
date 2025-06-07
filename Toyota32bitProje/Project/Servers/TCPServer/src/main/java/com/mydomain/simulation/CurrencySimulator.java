@@ -2,6 +2,7 @@ package com.mydomain.simulation;
 
 import java.util.Map;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -15,7 +16,8 @@ public class CurrencySimulator {
     private static final double SPIKE_PROBABILITY = 0.20;          // %20 ihtimalle spike
     private static final int SPIKE_DELAY_COUNT = 5;                // İlk 5 gönderide spike yapma
 
-    private static final Random random = new Random();
+    //private static final Random random = new Random();
+    private final Random random = new Random(UUID.randomUUID().hashCode() + System.nanoTime());
 
     // Gerçekten gönderilmiş rate sayısı
     private final Map<String, Integer> publishCounts = new ConcurrentHashMap<>();
