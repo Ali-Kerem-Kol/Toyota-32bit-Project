@@ -4,7 +4,12 @@ import com.mydomain.main.model.Rate;
 import com.mydomain.main.model.RateFields;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.json.JSONObject;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,17 +22,30 @@ import java.util.Set;
  */
 public class JumpThresholdFilter implements IRateFilter {
 
-    private static final Logger logger = LogManager.getLogger(JumpThresholdFilter.class);
+    private static final Logger log = LogManager.getLogger(JumpThresholdFilter.class);
+    private static final String CONFIG_FILE_PATH = "/app/Main/coordinator/config/jumpThresholdFilter.json";
 
     private final double maxJumpPercent;
-    private final Map<String, Set<String>> platformRateMap;
+    private Map<String, Set<String>> platformRateMap;
 
-    public JumpThresholdFilter(double maxJumpPercent, Map<String, Set<String>> platformRateMap) {
-        if (maxJumpPercent <= 0)
-            throw new IllegalArgumentException("maxJumpPercent must be positive");
+    /** ZORUNLU: no-arg kurucu (FilterService reflection ile böyle oluşturacak) */
+    public JumpThresholdFilter() {
+        // 1) JSON’u oku
+        JSONObject params;
+        try (InputStream in = Files.newInputStream(Path.of(CONFIG_FILE_PATH))) {
+            params = new JSONObject(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new IllegalStateException("Cannot load " + CONFIG_FILE_PATH, e);
+        }
+        // 2) Parametreleri al
+        this.maxJumpPercent = params.getDouble("maxJumpPercent");
+        log.info("JumpThresholdFilter params loaded: maxJumpPercent={}", maxJumpPercent);
+    }
 
-        this.maxJumpPercent = maxJumpPercent;
-        this.platformRateMap = platformRateMap;
+    /** FilterService bu setter ile platform-rate eşleşmesini enjekte edecek */
+    @Override
+    public void setPlatformAssignments(Map<String, Set<String>> m) {
+        this.platformRateMap = m;
     }
 
     @Override
@@ -35,12 +53,12 @@ public class JumpThresholdFilter implements IRateFilter {
         if (candidate == null || candidate.getFields() == null) return false;
 
         if (!shouldFilterApply(platform, rateName)) {
-            logger.trace("JumpThresholdFilter: Skipped → Platform='{}', Rate='{}'", platform, rateName);
+            log.trace("JumpThresholdFilter: Skipped → Platform='{}', Rate='{}'", platform, rateName);
             return true;
         }
 
         if (last == null || last.getFields() == null) {
-            logger.trace("JumpThresholdFilter: No previous rate, accepting by default for '{} - {}'", platform, rateName);
+            log.trace("JumpThresholdFilter: No previous rate, accepting by default for '{} - {}'", platform, rateName);
             return true;
         }
 
@@ -57,13 +75,13 @@ public class JumpThresholdFilter implements IRateFilter {
         boolean askOk = askJumpPercent <= maxJumpPercent;
 
         if (!bidOk || !askOk) {
-            logger.debug("❌ REJECTED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
+            log.debug("❌ REJECTED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
                     platform, rateName,
                     bidJumpPercent * 100, askJumpPercent * 100, maxJumpPercent * 100);
             return false;
         }
 
-        logger.trace("✅ PASSED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
+        log.debug("✅ PASSED platform={} rate={} → bidJump={:.2f}%% askJump={:.2f}%% (limit={:.2f}%%)",
                 platform, rateName,
                 bidJumpPercent * 100, askJumpPercent * 100, maxJumpPercent * 100);
         return true;

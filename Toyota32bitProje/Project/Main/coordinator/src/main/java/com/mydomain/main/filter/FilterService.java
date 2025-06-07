@@ -15,30 +15,38 @@ import java.util.*;
  */
 public class FilterService {
 
-    private static final Logger logger = LogManager.getLogger(FilterService.class);
+    private static final Logger log = LogManager.getLogger(FilterService.class);
 
     private final List<IRateFilter> filters = new ArrayList<>();
 
     public FilterService(JSONObject filtersJson) {
-        // ---------------- JumpThresholdFilter ----------------
-        if (filtersJson.getJSONObject("jumpThresholdFilter").getBoolean("enabled")) {
-            double maxJumpPercent = filtersJson.getJSONObject("jumpThresholdFilter").getDouble("maxJumpPercent");
-            JSONObject platformAssignments = filtersJson.getJSONObject("jumpThresholdFilter").getJSONObject("platforms");
 
-            Map<String, Set<String>> platformRateMap = parsePlatformRateMap(platformAssignments);
+        for (String key : filtersJson.keySet()) {
+            JSONObject obj = filtersJson.getJSONObject(key);
+            if (!obj.optBoolean("enabled", true)) continue;
 
-            filters.add(new JumpThresholdFilter(maxJumpPercent, platformRateMap));
-            logger.info("JumpThresholdFilter enabled → maxJumpPercent={}, platforms={}", maxJumpPercent, platformRateMap.keySet());
-        }
-        // ---------------- MovingAverageFilter ----------------
-        if (filtersJson.getJSONObject("movingAverageFilter").getBoolean("enabled")) {
-            double maxJumpPercent = filtersJson.getJSONObject("movingAverageFilter").getDouble("maxJumpPercent");
-            JSONObject platformAssignments = filtersJson.getJSONObject("movingAverageFilter").getJSONObject("platforms");
+            String className = obj.getString("className");
+            JSONObject plats  = obj.getJSONObject("platforms");
+            Map<String, Set<String>> platMap = parsePlatformRateMap(plats);
 
-            Map<String, Set<String>> platformRateMap = parsePlatformRateMap(platformAssignments);
+            try {
+                // 1) Sınıfı yükle, no-arg ctor çağır
+                Class<?> cls = Class.forName(className);
+                if (!IRateFilter.class.isAssignableFrom(cls)) {
+                    log.error("{} does not implement IRateFilter, skipped", className);
+                    continue;
+                }
+                IRateFilter filter = (IRateFilter) cls.getDeclaredConstructor().newInstance();
 
-            filters.add(new MovingAverageFilter(maxJumpPercent, platformRateMap));
-            logger.info("movingAverageFilter enabled → maxJumpPercent={}, platforms={}", maxJumpPercent, platformRateMap.keySet());
+                // 2) Platform-rate listesini enjekte et
+                filter.setPlatformAssignments(platMap);
+                filters.add(filter);
+
+                log.info("Loaded filter {} → platforms={}", className, platMap.keySet());
+
+            } catch (Exception e) {
+                log.error("Cannot load filter {}: {}", className, e.getMessage(), e);
+            }
         }
     }
 
@@ -48,13 +56,13 @@ public class FilterService {
         for (String platform : json.keySet()) {
             JSONObject platformObj = json.optJSONObject(platform);
             if (platformObj == null || !platformObj.has("rates")) {
-                logger.warn("Filter config: '{}' için 'rates' alanı eksik veya geçersiz, atlanıyor.", platform);
+                log.warn("Filter config: '{}' için 'rates' alanı eksik veya geçersiz, atlanıyor.", platform);
                 continue;
             }
 
             JSONArray rateArray = platformObj.optJSONArray("rates");
             if (rateArray == null) {
-                logger.warn("Filter config: '{}' için 'rates' dizisi null, atlanıyor.", platform);
+                log.warn("Filter config: '{}' için 'rates' dizisi null, atlanıyor.", platform);
                 continue;
             }
 
@@ -64,14 +72,14 @@ public class FilterService {
                 if (rate != null && !rate.isEmpty()) {
                     rateSet.add(rate);
                 } else {
-                    logger.warn("Filter config: platform='{}' içinde boş veya geçersiz rate bulundu, atlanıyor.", platform);
+                    log.warn("Filter config: platform='{}' içinde boş veya geçersiz rate bulundu, atlanıyor.", platform);
                 }
             }
 
             if (!rateSet.isEmpty()) {
                 result.put(platform, rateSet);
             } else {
-                logger.warn("Filter config: platform='{}' için geçerli rate bulunamadı, atlanıyor.", platform);
+                log.warn("Filter config: platform='{}' için geçerli rate bulunamadı, atlanıyor.", platform);
             }
         }
 
@@ -80,25 +88,25 @@ public class FilterService {
 
 
 
-    public boolean applyAllFilters(String platform, String rateName, Rate last, Rate candidate, List<Rate> history) {
+    public boolean applyAllFilters(String platformName, String rateName, Rate last, Rate candidate, List<Rate> history) {
         for (IRateFilter filter : filters) {
             try {
-                boolean accepted = filter.shouldAccept(platform, rateName, last, candidate, history);
+                boolean accepted = filter.shouldAccept(platformName, rateName, last, candidate, history);
                 if (!accepted) {
-                    logger.warn("❌ {} rejected rate (platform={}, rateName={})",
-                            filter.getClass().getSimpleName(), platform, rateName);
+                    log.warn("❌ {} rejected rate (platformName={}, rateName={})",
+                            filter.getClass().getSimpleName(), platformName, rateName);
                     return false;
                 } else {
-                    logger.info("✅ {} passed (platform={}, rateName={})",
-                            filter.getClass().getSimpleName(), platform, rateName);
+                    log.info("✅ {} passed (platformName={}, rateName={})",
+                            filter.getClass().getSimpleName(), platformName, rateName);
                 }
             } catch (Exception e) {
-                logger.error("❌ Exception occurred in {} for platform={}, rateName={} → {}",
-                        filter.getClass().getSimpleName(), platform, rateName, e.getMessage(), e);
+                log.error("❌ Exception occurred in {} for platformName={}, rateName={} → {}",
+                        filter.getClass().getSimpleName(), platformName, rateName, e.getMessage(), e);
                 return false;
             }
         }
-        logger.info("✅ All filters passed for rate (platform={}, rateName={}): {}", platform, rateName, candidate);
+        log.info("✅ All filters passed for rate (platformName={}, rateName={}): {}", platformName, rateName, candidate);
         return true;
     }
 
