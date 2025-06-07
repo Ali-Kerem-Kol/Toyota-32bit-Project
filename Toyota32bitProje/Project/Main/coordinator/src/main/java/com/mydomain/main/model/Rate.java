@@ -4,12 +4,22 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Tek bir döviz kuru bilgisini temsil eder.
- * Bu sınıfın alanları:
- * - rateName: Kuranın adı (örneğin "USDTRY").
- * - fields: Alış (bid), satış (ask) ve zaman damgasını içeren RateFields nesnesi.
- * - status: Kuranın aktiflik ve güncellenmişlik durumunu tutan RateStatus nesnesi.
- * Jackson ile JSON serileştirme ve deserileştirme işlemlerini destekler.
+ * {@code Rate}, tek bir döviz kuru bilgisini temsil eden bir model sınıfıdır.
+ * Bu sınıf, kur adı (`rateName`), alış/satış ve zaman damgası bilgilerini içeren
+ * `RateFields` nesnesi ve aktiflik/güncellenme durumunu tutan `RateStatus` nesnesini barındırır.
+ * Jackson kütüphanesi ile JSON serileştirme ve deserileştirme işlemlerini destekler.
+ *
+ * <p>Hizmetin temel işleyişi:
+ * <ul>
+ *   <li>Veri akışında bir kurun kimliğini (`rateName`) ve detaylarını (`fields`) saklar.</li>
+ *   <li>Durum bilgisi (`status`) ile kurun geçerliliğini ve güncellenme durumunu izler.</li>
+ *   <li>Deep copy destekli constructor ile nesne kopyalama sağlar.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Rate {
@@ -32,11 +42,13 @@ public class Rate {
 
     /**
      * JSON verisinden nesne oluşturmak için kullanılan yapıcı metot.
+     * Varsayılan olarak `status` aktif ve güncellenmiş olarak ayarlanır.
      *
-     * @param rateName  JSON'daki "rateName" alanı
-     * @param bid       JSON'daki "bid" alanı
-     * @param ask       JSON'daki "ask" alanı
-     * @param timestamp JSON'daki "timestamp" alanı
+     * @param rateName  JSON'daki "rateName" alanı, null veya boş olamaz
+     * @param bid       JSON'daki "bid" alanı, alış fiyatı
+     * @param ask       JSON'daki "ask" alanı, satış fiyatı
+     * @param timestamp JSON'daki "timestamp" alanı, zaman damgası (milisaniye)
+     * @throws IllegalArgumentException Geçersiz parametreler (null/negatif) durumunda
      */
     public Rate(
             @JsonProperty("rateName") String rateName,
@@ -51,9 +63,10 @@ public class Rate {
     /**
      * Tüm alanları elle belirterek Rate nesnesi oluşturur.
      *
-     * @param rateName Kuranın adı
-     * @param fields   Alış, satış ve zaman damgası bilgisi
-     * @param status   Aktiflik ve güncellenmişlik durumu
+     * @param rateName Kuranın adı, null veya boş olamaz
+     * @param fields   Alış, satış ve zaman damgası bilgisi, null olamaz
+     * @param status   Aktiflik ve güncellenmişlik durumu, null olamaz
+     * @throws IllegalArgumentException Geçersiz parametreler (null) durumunda
      */
     public Rate(String rateName, RateFields fields, RateStatus status) {
         this.rateName = rateName;
@@ -68,9 +81,8 @@ public class Rate {
         this.status = new RateStatus(other.status);   // deep copy
     }
 
-
     /**
-     * Kuranın adını döner.
+     * Kurun adını döner.
      *
      * @return rateName
      */
@@ -79,7 +91,7 @@ public class Rate {
     }
 
     /**
-     * Kuranın adını ayarlar.
+     * Kurun adını ayarlar.
      *
      * @param rateName Yeni kur adı
      */

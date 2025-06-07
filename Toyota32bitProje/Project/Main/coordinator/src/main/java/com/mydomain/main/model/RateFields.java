@@ -3,8 +3,21 @@ package com.mydomain.main.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * RateFields sınıfı bir döviz kuru için sayısal alanları saklar:
- * alış fiyatı (bid), satış fiyatı (ask) ve zaman damgası.
+ * {@code RateFields}, bir döviz kuru için sayısal alanları (alış fiyatı, satış fiyatı
+ * ve zaman damgası) saklayan bir model sınıfıdır. Bu sınıf, `Rate` nesnesi içinde
+ * kurun detay bilgilerini temsil eder ve Jackson ile JSON serileştirme/deserileştirme
+ * işlemlerini destekler.
+ *
+ * <p>Hizmetin temel işleyişi:
+ * <ul>
+ *   <li>Alış (`bid`) ve satış (`ask`) fiyatlarını milisaniye cinsinden zaman damgası ile birlikte saklar.</li>
+ *   <li>Deep copy destekli constructor ile nesne kopyalama sağlar.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
  */
 public class RateFields {
 
@@ -33,14 +46,12 @@ public class RateFields {
         this.timestamp = timestamp;
     }
 
-
     // Copy Constructor
     public RateFields(RateFields other) {
         this.bid = other.bid;
         this.ask = other.ask;
         this.timestamp = other.timestamp;
     }
-
 
     /**
      * Alış fiyatını döner.

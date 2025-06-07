@@ -15,6 +15,31 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.*;
 
+/**
+ * {@code KafkaProducerService}, Kafka producer’ını kullanarak rate verilerini belirtilen topic’e
+ * asenkron bir şekilde gönderir. Bağlantı kesintilerine karşı yeniden başlatma mekanizması
+ * (reinit) sunar ve hata durumlarını loglar. Apache Kafka client kütüphanesini temel alır.
+ *
+ * <p>Hizmetin temel işleyişi:
+ * <ul>
+ *   <li>Konfigürasyon parametreleriyle (bootstrap servers, topic, acks vb.) bir Kafka producer başlatır.</li>
+ *   <li>Verileri JSON formatında serialize ederek Kafka’ya gönderir.</li>
+ *   <li>Belirli aralıklarla (reinitPeriodSec) producer’ın durumunu kontrol eder ve yeniden başlatır.</li>
+ * </ul>
+ * </p>
+ *
+ * <p><b>Özellikler:</b>
+ * <ul>
+ *   <li>Yeniden başlatma (reinit) ile bağlantı kesintilerine dayanıklılık.</li>
+ *   <li>Loglama için Apache Log4j ile hata ayıklama ve izleme seviyeleri.</li>
+ *   <li>Batch gönderim desteği ile çoklu rate verisi işleme.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
+ */
 public class KafkaProducerService {
 
     private static final Logger log = LogManager.getLogger(KafkaProducerService.class);
@@ -35,6 +60,19 @@ public class KafkaProducerService {
                 return t;
             });
 
+    /**
+     * {@code KafkaProducerService} nesnesini başlatır.
+     * Kafka producer’ını konfigüre eder ve yeniden başlatma scheduler’ını başlatır.
+     *
+     * @param bootstrapServers Kafka broker adresleri (örneğin, "localhost:9092")
+     * @param topicName Gönderilecek verilerin topic adı
+     * @param acks Gönderim doğrulama seviyesi (örneğin, "all")
+     * @param retries Gönderim başarısızlığında yeniden deneme sayısı
+     * @param deliveryTimeoutMs Mesaj teslim zaman aşımı (milisaniye cinsinden)
+     * @param requestTimeoutMs İstek zaman aşımı (milisaniye cinsinden)
+     * @param reinitPeriodSec Yeniden başlatma kontrol aralığı (saniye cinsinden)
+     * @throws IllegalArgumentException Herhangi bir parametre null veya geçersizse
+     */
     public KafkaProducerService(String bootstrapServers,
                                 String topicName,
                                 String acks,
@@ -53,6 +91,12 @@ public class KafkaProducerService {
         scheduler.scheduleAtFixedRate(this::recoverProducerIfClosed, reinitPeriodSec, reinitPeriodSec, TimeUnit.SECONDS);
     }
 
+    /**
+     * Kafka producer’ını konfigüre eder ve başlatır.
+     * Başarısız olursa producer null kalır ve loglanır.
+     *
+     * @throws IllegalStateException Konfigürasyon sırasında beklenmedik bir hata oluşursa
+     */
     private synchronized void initProducer() {
         try {
             Properties props = new Properties();
@@ -74,12 +118,24 @@ public class KafkaProducerService {
         }
     }
 
+    /**
+     * Producer’ın kapalı olup olmadığını kontrol eder ve gerekirse yeniden başlatır.
+     * Eğer producer zaten aktifse işlem yapmaz.
+     */
     private void recoverProducerIfClosed() {
         if (producer != null) return;
         log.info("♻️ Re-initializing Kafka producer...");
         initProducer();
     }
 
+    /**
+     * Belirtilen rate verisini Kafka topic’ine gönderir.
+     * Gönderim başarısız olursa istisna fırlatır ve producer’ı kapatır.
+     *
+     * @param rate Gönderilecek rate verisi, null olamaz
+     * @throws KafkaException Producer null ise veya gönderim başarısız olursa
+     * @throws IllegalArgumentException Rate null ise
+     */
     public void sendRateToKafka(Rate rate) {
         if (producer == null) {
             throw new KafkaException("Kafka producer is null", rate.getRateName(), null);
@@ -105,6 +161,13 @@ public class KafkaProducerService {
         }
     }
 
+    /**
+     * Belirtilen rate verisi listesini Kafka topic’ine gönderir.
+     * Başarılı gönderilen rate’leri döndürür, başarısız olanlar loglanır.
+     *
+     * @param rates Gönderilecek rate verisi listesi, null veya boş olabilir
+     * @return Başarılı bir şekilde gönderilen rate’lerin listesi
+     */
     public List<Rate> sendRatesToKafka(List<Rate> rates) {
         List<Rate> successfullySent = new ArrayList<>();
 
@@ -143,7 +206,10 @@ public class KafkaProducerService {
         return successfullySent;
     }
 
-
+    /**
+     * Kafka producer’ını sessizce kapatır.
+     * İstisnalar yakalanır ve loglanmaz, producer null olarak ayarlanır.
+     */
     private void closeProducerSilently() {
         try {
             if (producer != null) {

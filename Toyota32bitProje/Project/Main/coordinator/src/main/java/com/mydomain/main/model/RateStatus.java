@@ -4,7 +4,21 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * RateStatus sınıfı bir kurun aktiflik ve güncelleme durumunu tutar.
+ * {@code RateStatus}, bir döviz kurunun aktiflik ve güncellenme durumunu tutan
+ * bir model sınıfıdır. Bu sınıf, `Rate` nesnesi içinde kurun durum bilgilerini
+ * temsil eder ve Jackson ile JSON serileştirme/deserileştirme işlemlerini destekler.
+ *
+ * <p>Hizmetin temel işleyişi:
+ * <ul>
+ *   <li>`isActive` ile kurun aktif/pasif durumunu izler.</li>
+ *   <li>`isUpdated` ile kurun son güncellenme durumunu belirtir.</li>
+ *   <li>Deep copy destekli constructor ile nesne kopyalama sağlar.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
  */
 public class RateStatus {
 
@@ -42,7 +56,6 @@ public class RateStatus {
         this.isActive = other.isActive;
         this.isUpdated = other.isUpdated;
     }
-
 
     /**
      * Kurun aktiflik durumunu döner.

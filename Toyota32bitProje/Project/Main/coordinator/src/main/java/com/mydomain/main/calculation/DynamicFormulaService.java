@@ -12,9 +12,31 @@ import java.io.FileReader;
 import java.util.Map;
 
 /**
- * DynamicFormulaService dışarıdan sağlanan JavaScript dosyasını
- * yükleyip compute(context) fonksiyonunu çalıştırarak
- * hesaplama sonuçlarını döndüren servistir.
+ * {@code DynamicFormulaService}, dışarıdan sağlanan bir JavaScript dosyasını yükleyerek
+ * `compute(context)` fonksiyonunu çalıştırır ve hesaplama sonuçlarını (bid/ask değerleri)
+ * bir `double[]` olarak döndürür. Bu sınıf, dinamik kur hesaplama işlemini desteklemek
+ * için Nashorn veya benzeri bir JavaScript motoru kullanır.
+ *
+ * <p>Hizmetin temel işleyişi şu adımları içerir:
+ * <ul>
+ *   <li>JavaScript motorunun yalnızca "javascript" yöntemiyle çalıştırılması kontrol edilir.</li>
+ *   <li>Konfigürasyon dosyasından (ConfigReader) belirtilen JavaScript dosyası yolu yüklenir.</li>
+ *   <li>Script bir kez initialize edilir ve `compute` fonksiyonu context verileriyle çağrılır.</li>
+ *   <li>Hata durumlarında detaylı loglama yapılır ve istisnalar fırlatılır.</li>
+ * </ul>
+ * </p>
+ *
+ * <p><b>Özellikler:</b>
+ * <ul>
+ *   <li>Statik bir servis olarak tasarlanmıştır; motor yalnızca ilk çağrıda initialize edilir.</li>
+ *   <li>Loglama için Apache Log4j kullanılır ve hata ayıklama için izleme (trace) seviyesi desteklenir.</li>
+ *   <li>Dış bağımlılıklar (örn. Redis/Kafka) yoktur; yalnızca dosya sistemi ve JVM motoru kullanılır.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
  */
 public class DynamicFormulaService {
 
@@ -27,12 +49,26 @@ public class DynamicFormulaService {
     private static final String FORMULA_FILE_PATH = ConfigReader.getFormulaFilePath();
 
     /**
-     * compute(context) JavaScript fonksiyonunu çağırır ve
-     * hesaplanan bid/ask değerlerini içeren double[] döner.
+     * `compute(context)` JavaScript fonksiyonunu çağırır ve hesaplanan bid/ask değerlerini
+     * içeren bir `double[]` döndürür. Bu metod, ilk çağrıda JavaScript motorunu initialize
+     * eder ve belirtilen dosya yolundan (FORMULA_FILE_PATH) JavaScript kodunu yükler.
+     * Yalnızca "javascript" yöntemi desteklenir; aksi halde istisna fırlatılır.
      *
-     * @param context Hesaplama için gerekli değişkenleri içeren map
-     * @return JavaScript fonksiyonundan dönen bid ve ask değerleri
-     * @throws FormulaEngineException JavaScript motoru ya da hesaplama hatası durumunda
+     * <p>İşlem adımları:
+     * <ol>
+     *   <li>Hesaplama yöntemi kontrol edilir ("javascript" olmalı).</li>
+     *   <li>Script motoru (Nashorn) initialize edilmemişse yüklenir.</li>
+     *   <li>`compute` fonksiyonu context verileriyle çağrılır ve sonuç dönülür.</li>
+     *   <li>Hata durumunda detaylı loglama yapılır ve istisna fırlatılır.</li>
+     * </ol>
+     * </p>
+     *
+     * @param context Hesaplama için gerekli değişkenleri içeren map (örn. {"calcName": "EURUSD",
+     *                "TCP_PLATFORMUsdtryBid": 32.5}), null olmamalı
+     * @return JavaScript `compute` fonksiyonundan dönen [bid, ask] değerlerini içeren `double[]`
+     * @throws FormulaEngineException Eğer hesaplama yöntemi desteklenmezse, motor initialize
+     *                                edilemezse, dosya yüklenemezse veya fonksiyon hata verirse
+     * @throws IllegalArgumentException Eğer context null ise
      */
     public static double[] calculate(Map<String, Object> context) throws FormulaEngineException {
         if (!"javascript".equalsIgnoreCase(CALCULATION_METHOD)) {

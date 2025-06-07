@@ -21,6 +21,34 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * {@code TCPProvider}, TCP tabanlı veri kaynaklarından kur (rate) verilerini çeker,
+ * abonelik bazında veri akışını yönetir ve alınan verileri `RedisService`’e kaydeder.
+ * `IProvider` arayüzünü uygulayarak platform bağlantılarını yönetir ve `ICoordinator` ile
+ * veri bildirimlerini koordine eder. Bu sınıf, yeniden bağlanma (reconnect) mekanizması
+ * ile kesintilere karşı dayanıklıdır ve thread-safe bir şekilde çalışır.
+ *
+ * <p>Hizmetin temel işleyişi:
+ * <ul>
+ *   <li>Konfigürasyon dosyasından (tcp-config.json) host ve port bilgilerini yükler.</li>
+ *   <li>Abonelikler (`subscriptions`) bir `ConcurrentHashMap.newKeySet` ile thread-safe şekilde saklanır.</li>
+ *   <li>TCP soketi üzerinden veri akışını dinler ve gelen verileri işler.</li>
+ *   <li>Bağlantı kesilirse 5 saniye bekleyerek yeniden bağlanma denemesi yapar.</li>
+ * </ul>
+ * </p>
+ *
+ * <p><b>Özellikler:</b>
+ * <ul>
+ *   <li>Yeniden bağlanma (`reconnect`) özelliği ile kesintisiz çalışma sağlar.</li>
+ *   <li>Loglama için Apache Log4j ile hata ayıklama ve izleme seviyeleri desteklenir.</li>
+ *   <li>Veri işleme sırasında zaman damgası ayrıştırması esnek bir formatta yapılır.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
+ */
 public class TCPProvider implements IProvider {
 
     private static final Logger log = LogManager.getLogger(TCPProvider.class);
@@ -41,6 +69,15 @@ public class TCPProvider implements IProvider {
     private volatile OutputStream out;
     private Thread connectionThread;
 
+    /**
+     * Belirtilen platform adına TCP bağlantısını kurar ve veri akışını başlatır.
+     * Konfigürasyon dosyasını yükler, bağlantı thread’ini başlatır ve `ICoordinator`’a bildirim yapar.
+     * Eğer konfigürasyon yüklenemezse bağlantı başarısız olur ve loglanır.
+     *
+     * @param platformName Bağlantı kurulacak platformun adı (örneğin "TCP_PLATFORM"),
+     *                    null veya boş ise hata loglanır
+     * @param _ignored Bağlantı parametreleri (bu uygulamada kullanılmaz, null olabilir)
+     */
     @Override
     public void connect(String platformName, Map<String, String> _ignored) {
         this.platformName = platformName;
@@ -58,6 +95,14 @@ public class TCPProvider implements IProvider {
         connectionThread.start();
     }
 
+    /**
+     * Belirtilen platform için TCP bağlantısını keser ve kaynakları serbest bırakır.
+     * Yeniden bağlanma mekanizmasını durdurur, abonelikleri temizler ve bildirim yapar.
+     *
+     * @param platformName Bağlantısı kesilecek platformun adı,
+     *                    null veya boş ise hata loglanır
+     * @param _unused Bağlantı kesme parametreleri (bu uygulamada kullanılmaz, null olabilir)
+     */
     @Override
     public void disConnect(String platformName, Map<String, String> _unused) {
         log.trace("disConnect() called for platform: {}", platformName);
@@ -70,6 +115,15 @@ public class TCPProvider implements IProvider {
         log.debug("TCPProvider thread interrupted for: {}", platformName);
     }
 
+    /**
+     * Belirtilen platformda bir kura (rate) abone olur.
+     * Abonelik, `subscriptions` kümesine eklenir ve aktif bağlantı varsa komut gönderilir.
+     *
+     * @param platformName Abonelik yapılacak platformun adı,
+     *                    null veya boş ise hata loglanır
+     * @param rate Abone olunacak kurun adı (örneğin "USDTRY"),
+     *             null veya boş ise hata loglanır
+     */
     @Override
     public void subscribe(String platformName, String rate) {
         subscriptions.add(rate);
@@ -85,6 +139,15 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Belirtilen platformda bir kura (rate) abonelikten çıkar.
+     * Abonelik, `subscriptions` kümesinden kaldırılır ve aktif bağlantı varsa komut gönderilir.
+     *
+     * @param platformName Abonelikten çıkılacak platformun adı,
+     *                    null veya boş ise hata loglanır
+     * @param rate Aboneliği sonlandırılacak kurun adı,
+     *             null veya boş ise hata loglanır
+     */
     @Override
     public void unSubscribe(String platformName, String rate) {
         if (subscriptions.remove(rate)) {
@@ -96,17 +159,36 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Bu sağlayıcının koordinatör arayüzünü ayarlar.
+     * Koordinatör, veri geldiğinde veya durum değiştiğinde bildirim almak için kullanılır.
+     *
+     * @param c Uygulamanın koordinatör nesnesi (ICoordinator),
+     *          null ise hata loglanır ancak istisna fırlatılmaz
+     */
     @Override
     public void setCoordinator(ICoordinator c) {
         this.coordinator = c;
         log.trace("Coordinator reference set for TCPProvider.");
     }
 
+    /**
+     * Bu sağlayıcının Redis servisini ayarlar.
+     * RedisService, çekilen verilerin saklanması için kullanılır.
+     *
+     * @param redisService Redis operasyonlarını yöneten servis,
+     *                     null ise hata loglanır ancak istisna fırlatılmaz
+     */
     @Override
     public void setRedis(RedisService redisService) {
         this.redisService = redisService;
     }
 
+    /**
+     * TCP bağlantı döngüsünü yönetir.
+     * Bağlantı kurulur, abonelik komutları sessizce gönderilir ve veri akışı dinlenir.
+     * Bağlantı kesilirse 5 saniye bekleyerek yeniden bağlanma denemesi yapar.
+     */
     private void loop() {
         log.trace("🔁 [{}] TCP loop started", platformName);
         while (reconnect.get()) {
@@ -140,6 +222,12 @@ public class TCPProvider implements IProvider {
         log.trace("🔁 [{}] TCP loop terminated", platformName);
     }
 
+    /**
+     * Kendi konfigürasyon dosyasını (tcp-config.json) yükler.
+     * Host ve port parametrelerini parse eder.
+     *
+     * @return Konfigürasyon yükleme başarılıysa true, aksi halde false
+     */
     private boolean loadOwnConfig() {
         try {
             byte[] bytes = Files.readAllBytes(Paths.get(CONFIG_FILE_PATH));
@@ -154,11 +242,25 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Belirtilen kur için abonelik komutunu sessizce gönderir.
+     * Hata durumunda loglanır ancak ana akışı etkilemez.
+     *
+     * @param rate Abone olunacak kurun adı (örneğin "USDTRY"),
+     *             null veya boş ise hata loglanır
+     */
     private void sendSilently(String rate) {
         log.trace("[{}] Silently sending subscription command for: {}", platformName, rate);
         if (out != null) sendCmd("subscribe|" + rate);
     }
 
+    /**
+     * TCP soketine bir komut gönderir ve sonucunu döndürür.
+     *
+     * @param cmd Gönderilecek komut (örneğin "subscribe|USDTRY"),
+     *            null veya boş ise hata loglanır
+     * @return Komut başarıyla gönderildiyse true, aksi halde false
+     */
     private boolean sendCmd(String cmd) {
         try {
             log.trace("[{}] Sending TCP command: {}", platformName, cmd);
@@ -171,6 +273,13 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Gelen TCP verisini işler ve Redis’e kaydeder.
+     * Verinin geçerliliği kontrol edilir ve Coordinator’a bildirim yapılır.
+     *
+     * @param line İşlenecek TCP mesajı (örneğin "USDTRY|bid:1.23|ask:1.24|ts:2025-..."),
+     *             null veya boş ise hata loglanır
+     */
     private void handle(String line) {
         try {
             if (!line.contains("|") || coordinator == null) return;
@@ -196,22 +305,32 @@ public class TCPProvider implements IProvider {
                     new RateStatus(true, false)
             );
 
-            try {
-                int result = redisService.putRawRate(platformName,rateName,rate);
+            int result = redisService.putRawRate(platformName, rateName, rate);
 
-                if (result == 0) {
-                    coordinator.onRateAvailable(platformName, rateName, rate);
-                } else if (result == 1) {
-                    coordinator.onRateUpdate(platformName, rateName, rate.getFields());
-                }
-            } catch (RedisException e) {
-                log.error("❌ [{}] Redis error while processing rate [{}]: {}", platformName, rateName, e.getMessage(), e);
+            if (result == 0) {
+                coordinator.onRateAvailable(platformName, rateName, rate);
+            } else if (result == 1) {
+                coordinator.onRateUpdate(platformName, rateName, rate.getFields());
+            } else if (result == -1) {
+                log.warn("[{}] Filter rejected rate: {}", platformName, rateName);
             }
+        } catch (NumberFormatException e) {
+            log.error("📉 [{}] Failed to parse numeric data in [{}] → {}", platformName, line, e.getMessage());
+        } catch (RedisException e) {
+            log.error("❌ [{}] Redis error while processing rate [{}]: {}", platformName, line, e.getMessage());
         } catch (Exception e) {
-            log.error("📉 [{}] Failed to parse/process TCP data [{}] → {}", platformName, line, e.getMessage(), e);
+            log.error("📉 [{}] Failed to parse/process TCP data [{}] → {}", platformName, line, e.getMessage());
         }
     }
 
+    /**
+     * Gelen ham zaman damgasını ayrıştırır ve epoch milisaniyesine dönüştürür.
+     * Ayrıştırma başarısız olursa mevcut zaman kullanılır.
+     *
+     * @param raw Ayrıştırılacak ham zaman damgası (örneğin "ts:2025-06-07T05:40:00Z"),
+     *            null veya boş ise hata loglanır
+     * @return Epoch milisaniye cinsinden zaman damgası
+     */
     private long parseTimestamp(String raw) {
         try {
             String d = raw.split(":", 3)[2];
@@ -227,6 +346,13 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Çalıştırılacak kod bloğunu güvenli bir şekilde çalıştırır.
+     * İstisnalar loglanır ancak ana akışı etkilemez.
+     *
+     * @param r Çalıştırılacak Runnable nesne,
+     *          null ise hata loglanır
+     */
     private static void safe(Runnable r) {
         try {
             r.run();
@@ -235,6 +361,13 @@ public class TCPProvider implements IProvider {
         }
     }
 
+    /**
+     * Belirtilen milisaniye kadar thread’i bekletir.
+     * Kesilirse thread’in kesilme durumu korunur.
+     *
+     * @param ms Bekleme süresi (milisaniye cinsinden),
+     *           0 veya negatifse hata loglanır ancak işlem devam eder
+     */
     private static void waitMs(long ms) {
         try {
             Thread.sleep(ms);

@@ -13,9 +13,33 @@ import redis.clients.jedis.resps.ScanResult;
 import java.util.*;
 
 /**
- * Redis ile iletişim kurarak hem raw hem de calculated kurların
- * saklanmasını, güncellenmesini ve durum yönetimini sağlar.
- * Performans ve tutarlılık için SCAN, LSET ve Transaction kullanır.
+ * {@code RedisService}, sistemde ham (raw) ve hesaplanmış (calculated) kurların saklanmasını,
+ * güncellenmesini, pasifleştirilmesini ve durum yönetimini sağlayan bir Redis istemci servisidir.
+ * Performans ve tutarlılık için bloklamasız `SCAN` komutu, liste operasyonları (`LPUSH`, `LSET`),
+ * atomik transaction’lar ve TTL (Time-To-Live) mekanizması kullanır. Bu sınıf, platformlardan
+ * gelen verileri önbelleğe alır, filtreleme ile doğrulama yapar ve Coordinator tarafından
+ * hesaplama süreçlerine destek verir.
+ *
+ * <p>Hizmetin temel işlevleri:
+ * <ul>
+ *   <li>Ham kurları (`raw_rates`) platform ve rateName bazında saklar, en güncel aktif veriyi döndürür.</li>
+ *   <li>Hesaplanmış kurları (`calculated_rates`) rateName bazında saklar ve aktif/passif durumlarını yönetir.</li>
+ *   <li>Filtreleme servisi ile iş birliği yaparak veri tutarlılığını sağlar.</li>
+ *   <li>Redis havuzunu (JedisPool) kullanarak bağlantı yönetimini optimize eder.</li>
+ * </ul>
+ * </p>
+ *
+ * <p><b>Özellikler:</b>
+ * <ul>
+ *   <li>Her anahtar için özelleştirilebilir TTL (saniye) ve maksimum liste boyutu (REDIS_MAX_LIST_SIZE).</li>
+ *   <li>Hata yönetimi için {@link RedisException} fırlatılır ve Apache Log4j ile detaylı loglama yapılır.</li>
+ *   <li>Thread-safe operasyonlar için JedisPool ve transaction mekanizması kullanılır.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
  */
 public class RedisService {
     private static final Logger log = LogManager.getLogger(RedisService.class);
@@ -27,14 +51,24 @@ public class RedisService {
     private final int REDIS_MAX_LIST_SIZE;
 
     /**
-     * RedisService constructor.
+     * {@code RedisService} nesnesini oluşturur ve gerekli bağımlılıkları initialize eder.
+     * Bu constructor, Redis bağlantı havuzunu, filtreleme servisini ve yapılandırma parametrelerini
+     * (TTL ve maksimum liste boyutu) alır. Null veya geçersiz parametreler hata fırlatmaz,
+     * ancak loglanır.
      *
-     * @param jedisPool         Bağlanılacak Redis havuzu
-     * @param filterService     Filtre uygulama servisi
-     * @param redisTtl          Her bir anahtar için TTL (saniye)
-     * @param redisMaxListSize  Her bir listenin maksimum eleman sayısı
+     * @param jedisPool Redis bağlantıları için kullanılacak JedisPool nesnesi,
+     *                  null ise hata loglanır ve işlemler başarısız olur
+     * @param filterService Filtreleme işlemlerini gerçekleştiren servis,
+     *                      null ise filtreleme atlanır
+     * @param redisTtl Her anahtar için geçerli olacak TTL süresi (saniye),
+     *                 0 veya negatifse varsayılan olarak 0 (sonsuz) kabul edilir
+     * @param redisMaxListSize Her listenin maksimum eleman sayısı,
+     *                         0 veya negatifse varsayılan olarak 100 kabul edilir
+     * @throws IllegalArgumentException Eğer jedisPool null ise
      */
     public RedisService(JedisPool jedisPool, FilterService filterService, int redisTtl, int redisMaxListSize) {
+        if (jedisPool == null) throw new IllegalArgumentException("JedisPool cannot be null");
+
         this.jedisPool = jedisPool;
         this.filterService = filterService;
         this.REDIS_TTL = redisTtl;
@@ -46,10 +80,14 @@ public class RedisService {
     // =========================================================================
 
     /**
-     * Belirli bir pattern'e uyan anahtarları SCAN ile bulur.
+     * Belirli bir pattern'e (desen) uyan anahtarları Redis'in `SCAN` komutu ile
+     * bloklamasız bir şekilde tarar ve döndürür. Bu metod, büyük veri setlerinde
+     * performansı artırmak için cursor tabanlı tarama kullanır.
      *
-     * @param pattern Key deseni (ör: raw_rates:*)
-     * @return Uyumlu anahtarlar
+     * @param pattern Aranacak anahtar deseni (örneğin "raw_rates:*" veya "calculated_rates:*"),
+     *                null veya boş ise boş bir küme döndürülür
+     * @return Pattern'e uyan anahtarların kümesi (Set<String>),
+     *         her zaman dolu bir küme veya boş küme döner
      */
     private Set<String> scanKeys(String pattern) {
         Set<String> keys = new HashSet<>();
@@ -70,11 +108,28 @@ public class RedisService {
     // =========================================================================
 
     /**
-     * Yeni raw rate ekler (varsa filtre uygular).
+     * Yeni bir ham kur (raw rate) ekler ve gerekiyorsa filtre uygular.
+     * Eğer veri ilk ekleniyorsa 0, güncelleniyorsa 1, filtre başarısızsa -1 döndürür.
+     * TTL ve maksimum liste boyutu sınırları içinde saklar.
      *
-     * @return 0 → ilk ekleme, 1 → güncellendi
+     * @param platform Verinin geldiği platform adı (örneğin "REST_PLATFORM"),
+     *                 null veya boş ise hata loglanır
+     * @param rateName Eklenen kurun adı (örneğin "USDTRY"),
+     *                 null veya boş ise hata loglanır
+     * @param rate Eklenen ham kur nesnesi (Rate),
+     *             null ise hata loglanır ve istisna fırlatılır
+     * @return 0 (ilk ekleme), 1 (güncelleme), -1 (filtre başarısız)
+     * @throws RedisException Redis operasyonunda hata oluşursa
+     * @throws IllegalArgumentException Eğer rate null ise
      */
     public int putRawRate(String platform, String rateName, Rate rate) {
+        if (rate == null) {
+            throw new IllegalArgumentException("Rate cannot be null");
+        }
+        if (platform == null || platform.isEmpty() || rateName == null || rateName.isEmpty()) {
+            throw new IllegalArgumentException("Platform or rateName cannot be null or empty");
+        }
+
         String key = "raw_rates:" + platform + ":" + rateName;
         try (Jedis jedis = jedisPool.getResource()) {
             boolean isFirst = jedis.llen(key) == 0;
@@ -97,7 +152,12 @@ public class RedisService {
     }
 
     /**
-     * En güncel aktif tüm raw rate’leri (platform/rate bazında) getirir.
+     * En güncel ve aktif ham kurları (platform/rate bazında) döndürür.
+     * Her platform için yalnızca en yeni zaman damgalı aktif veriyi seçer.
+     *
+     * @return Platform ve rateName bazında gruplanmış aktif ham kurların haritası
+     *         (Map<Platform, Map<RateName, Rate>>), boş olabilir
+     * @throws RedisException Redis tarama veya deserializasyon hatası oluşursa
      */
     public Map<String, Map<String, Rate>> getMostRecentAndActiveRawRates() {
         Map<String, Map<String, Rate>> result = new HashMap<>();
@@ -129,7 +189,12 @@ public class RedisService {
     }
 
     /**
-     * Parametre olarak gelen raw rate’leri LSET ile pasifleştirir (atomic transaction).
+     * Belirtilen ham kurları atomik transaction ile pasifleştirir.
+     * Her platform/rate için zaman damgasına göre eşleşen veriyi günceller.
+     *
+     * @param rates Pasifleştirilecek ham kurların haritası
+     *              (Map<Platform, Map<RateName, Rate>>), null veya boş olabilir
+     * @throws RedisException Redis güncelleme veya transaction hatası oluşursa
      */
     public void deactivateRawRates(Map<String, Map<String, Rate>> rates) {
         try (Jedis jedis = jedisPool.getResource()) {
@@ -167,9 +232,21 @@ public class RedisService {
     // =========================================================================
 
     /**
-     * Calculated rate ekler.
+     * Hesaplanmış bir kuru Redis'e ekler.
+     * TTL ve maksimum liste boyutu sınırları içinde saklar.
+     *
+     * @param rateName Eklenen hesaplanmış kurun adı (örneğin "USDTRY"),
+     *                 null veya boş ise hata loglanır
+     * @param rate Eklenen hesaplanmış kur nesnesi (Rate),
+     *             null ise hata loglanır ve istisna fırlatılır
+     * @throws RedisException Redis ekleme hatası oluşursa
+     * @throws IllegalArgumentException Eğer rate veya rateName null ise
      */
     public void putCalculatedRate(String rateName, Rate rate) {
+        if (rate == null || rateName == null || rateName.isEmpty()) {
+            throw new IllegalArgumentException("Rate and rateName cannot be null or empty");
+        }
+
         String key = "calculated_rates:" + rateName;
         try (Jedis jedis = jedisPool.getResource()) {
             jedis.lpush(key, serialize(rate));
@@ -181,7 +258,12 @@ public class RedisService {
     }
 
     /**
-     * En güncel aktif tüm calculated rate’leri getirir.
+     * En güncel ve aktif hesaplanmış kurları döndürür.
+     * Her rateName için yalnızca en yeni zaman damgalı aktif veriyi seçer.
+     *
+     * @return Aktif hesaplanmış kurların listesi (List<Rate>),
+     *         boş olabilir
+     * @throws RedisException Redis tarama veya deserializasyon hatası oluşursa
      */
     public List<Rate> getMostRecentAndActiveCalculatedRates() {
         List<Rate> result = new ArrayList<>();
@@ -209,7 +291,12 @@ public class RedisService {
     }
 
     /**
-     * Parametre olarak gelen rate’leri LSET ile pasifleştirir (atomic transaction).
+     * Belirtilen hesaplanmış kurları atomik transaction ile pasifleştirir.
+     * Her rate için zaman damgasına göre eşleşen veriyi günceller.
+     *
+     * @param rates Pasifleştirilecek hesaplanmış kurların listesi (List<Rate>),
+     *              null veya boş olabilir
+     * @throws RedisException Redis güncelleme veya transaction hatası oluşursa
      */
     public void deactivateCalculatedRates(List<Rate> rates) {
         try (Jedis jedis = jedisPool.getResource()) {
@@ -238,7 +325,12 @@ public class RedisService {
     }
 
     /**
-     * Tüm aktif calculated rate’leri getirir.
+     * Tüm aktif hesaplanmış kurları döndürür.
+     * Her rateName için aktif durumdaki tüm verileri listeler.
+     *
+     * @return Aktif hesaplanmış kurların listesi (List<Rate>),
+     *         boş olabilir
+     * @throws RedisException Redis tarama veya deserializasyon hatası oluşursa
      */
     public List<Rate> getAllActiveCalculatedRates() {
         List<Rate> activeRates = new ArrayList<>();
@@ -263,10 +355,30 @@ public class RedisService {
     // JSON Serileştirme / Deserileştirme
     // =========================================================================
 
+    /**
+     * Bir Rate nesnesini JSON string'ine serileştirir.
+     * Jackson ObjectMapper ile gerçekleştirilir.
+     *
+     * @param rate Serileştirilecek Rate nesnesi,
+     *             null ise hata loglanır ve istisna fırlatılır
+     * @return Serileştirilmiş JSON string
+     * @throws Exception Serileştirme hatası oluşursa
+     * @throws IllegalArgumentException Eğer rate null ise
+     */
     private String serialize(Rate rate) throws Exception {
         return objectMapper.writeValueAsString(rate);
     }
 
+    /**
+     * Bir JSON string'ini Rate nesnesine deserileştirir.
+     * Jackson ObjectMapper ile gerçekleştirilir.
+     *
+     * @param json Deserileştirilecek JSON string,
+     *             null veya boş ise hata loglanır ve istisna fırlatılır
+     * @return Deserileştirilmiş Rate nesnesi
+     * @throws Exception Deserileştirme hatası oluşursa
+     * @throws IllegalArgumentException Eğer json null veya boş ise
+     */
     private Rate deserialize(String json) throws Exception {
         return objectMapper.readValue(json, Rate.class);
     }

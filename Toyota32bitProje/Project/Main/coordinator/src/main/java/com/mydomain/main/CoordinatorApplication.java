@@ -12,7 +12,32 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import redis.clients.jedis.JedisPool;
 
-
+/**
+ * {@code CoordinatorApplication}, uygulamanın ana giriş noktasıdır ve koordinasyon
+ * servislerini başlatır. `ConfigReader` ile yapılandırma dosyası yüklenir, Redis,
+ * Kafka, hesaplama ve filtre servisleri initialize edilir, ardından `Coordinator`
+ * ile veri akışı koordine edilir. Bu sınıf, uygulamanın yaşam döngüsünü yönetir.
+ *
+ * <p>Hizmetin temel işleyişi:
+ * <ul>
+ *   <li>Yapılandırma dosyası (`config.json`) okunur ve doğrulama yapılır.</li>
+ *   <li>Redis, Kafka, hesaplama ve filtre servisleri başlatılır.</li>
+ *   <li>`Coordinator` ile sağlayıcılar yüklenir ve hesaplama worker’ı çalıştırılır.</li>
+ *   <li>Uygulama kapanışında kaynaklar (örneğin, JedisPool) güvenli bir şekilde serbest bırakılır.</li>
+ * </ul>
+ * </p>
+ *
+ * <p><b>Notlar:</b>
+ * <ul>
+ *   <li>Bu sınıf, ana thread’i canlı tutarak uygulamanın sürekli çalışmasını sağlar.</li>
+ *   <li>Hata durumlarında loglama ile hata ayıklama yapılabilir.</li>
+ * </ul>
+ * </p>
+ *
+ * @author Ali Kerem Kol
+ * @version 1.0
+ * @since 2025-06-07
+ */
 public class CoordinatorApplication {
 
     private static final Logger log = LogManager.getLogger(CoordinatorApplication.class);
@@ -54,6 +79,7 @@ public class CoordinatorApplication {
             // Provider'ları yükle
             coordinator.loadProviders(ConfigReader.getProviders());
 
+            // Akışı başlat
             coordinator.startCalculationWorker(100);
 
             log.info("=== Coordinator up & running ===");
