@@ -1,7 +1,8 @@
 package com.mydomain.main.provider;
 
-import com.mydomain.main.cache.RateCache;
 import com.mydomain.main.coordinator.ICoordinator;
+import com.mydomain.main.redis.RedisService;
+
 import java.util.Map;
 
 /**
@@ -51,6 +52,8 @@ public interface IProvider {
      */
     void setCoordinator(ICoordinator coordinator);
 
-    void setCache(RateCache cache); // Sağlayıcıya RateCache nesnesi eklenir, böylece sağlayıcı verileri önbelleğe alabilir.
+
+    void setRedis(RedisService redisService); // Sağlayıcıya RateCache nesnesi eklenir, böylece sağlayıcı verileri önbelleğe alabilir.
+
 
 }

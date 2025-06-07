@@ -2,9 +2,10 @@ package com.mydomain.main.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mydomain.main.cache.RateCache;
 import com.mydomain.main.coordinator.ICoordinator;
+import com.mydomain.main.exception.RedisException;
 import com.mydomain.main.model.*;
+import com.mydomain.main.redis.RedisService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.JSONObject;
@@ -26,12 +27,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class RESTProvider implements IProvider, AutoCloseable {
 
-    private static final Logger logger = LogManager.getLogger(RESTProvider.class);
+    private static final Logger log = LogManager.getLogger(RESTProvider.class);
     private static final String CONFIG_FILE_PATH = "/app/Main/coordinator/config/rest-config.json";
 
     private ICoordinator coordinator;
     private String platformName;
-    private RateCache cache;
+    private RedisService redisService;
 
     private String baseUrl;
     private String apiKey;
@@ -55,18 +56,18 @@ public class RESTProvider implements IProvider, AutoCloseable {
     @Override
     public void connect(String platformName, Map<String, String> _ignored) {
         this.platformName = platformName;
-        logger.trace("connect() called for platform: {}", platformName);
+        log.trace("connect() called for platform: {}", platformName);
 
         if (!loadOwnConfig()) {
-            logger.error("⛔ Config load failed – RESTProvider could not be started.");
+            log.error("⛔ Config load failed – RESTProvider could not be started.");
             return;
         }
 
-        logger.info("🔍 [{}] REST config loaded: url={}, interval={}s",
+        log.info("🔍 [{}] REST config loaded: url={}, interval={}s",
                 platformName, baseUrl, pollInterval.getSeconds());
 
         connected.set(true);
-        logger.trace("Calling coordinator.onConnect() for: {}", platformName);
+        log.trace("Calling coordinator.onConnect() for: {}", platformName);
         safe(() -> coordinator.onConnect(platformName, true));
 
         scheduler.scheduleAtFixedRate(this::pollAll, 0, pollInterval.toMillis(), TimeUnit.MILLISECONDS);
@@ -74,51 +75,50 @@ public class RESTProvider implements IProvider, AutoCloseable {
 
     @Override
     public void disConnect(String platformName, Map<String, String> _unused) {
-        logger.trace("disConnect() called for platform: {}", platformName);
+        log.trace("disConnect() called for platform: {}", platformName);
         close();
     }
 
     @Override
     public void subscribe(String platformName, String rateName) {
         subscriptions.add(rateName);
-        logger.info("📡 [{}] Subscribed to rate: {}", platformName, rateName);
+        log.info("📡 [{}] Subscribed to rate: {}", platformName, rateName);
     }
 
     @Override
     public void unSubscribe(String platformName, String rateName) {
         subscriptions.remove(rateName);
-        logger.info("📴 [{}] Unsubscribed from rate: {}", platformName, rateName);
+        log.info("📴 [{}] Unsubscribed from rate: {}", platformName, rateName);
     }
 
     @Override
     public void setCoordinator(ICoordinator c) {
         this.coordinator = c;
-        logger.trace("Coordinator reference set for RESTProvider.");
+        log.trace("Coordinator reference set for RESTProvider.");
     }
 
     @Override
-    public void setCache(RateCache cache) {
-        this.cache = cache;
-        logger.trace("Cache reference set for RESTProvider.");
+    public void setRedis(RedisService redisService) {
+        this.redisService = redisService;
     }
 
     private void pollAll() {
         if (subscriptions.isEmpty()) {
-            logger.debug("[{}] No subscriptions to poll.", platformName);
+            log.debug("[{}] No subscriptions to poll.", platformName);
             return;
         }
         if (baseUrl == null) {
-            logger.error("[{}] Base URL not set. Cannot poll.", platformName);
+            log.error("[{}] Base URL not set. Cannot poll.", platformName);
             return;
         }
 
-        logger.trace("[{}] Starting poll for subscriptions: {}", platformName, subscriptions);
+        log.trace("[{}] Starting poll for subscriptions: {}", platformName, subscriptions);
         subscriptions.forEach(this::fetchOne);
     }
 
     private void fetchOne(String rateName) {
         try {
-            logger.trace("[{}] Fetching data for rate: {}", platformName, rateName);
+            log.trace("[{}] Fetching data for rate: {}", platformName, rateName);
 
             HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + "/" + rateName))
                     .header("Authorization", "Bearer " + apiKey)
@@ -131,21 +131,37 @@ public class RESTProvider implements IProvider, AutoCloseable {
             rateName = jsonNode.path("rateName").asText();
             double bid = jsonNode.path("bid").asDouble();
             double ask = jsonNode.path("ask").asDouble();
-            String ts = jsonNode.path("timestamp").asText(Instant.now().toString());
-
-            logger.trace("[{}] Fetched REST rate: {} = bid:{} ask:{} ts:{}", platformName, rateName, bid, ask, ts);
-
-            if (cache.isFirstRate(platformName, rateName)) {
-                Rate rate = cache.addFirstRate(platformName, rateName, new RateFields(bid, ask, ts));
-                if (rate == null) return; // Cache already has this rate
-                coordinator.onRateAvailable(platformName, rateName, rate);
-            } else {
-                Rate updatedRate = cache.addNewRate(platformName, rateName, new RateFields(bid, ask, ts));
-                if (updatedRate == null) return; // Cache has not have this rate yet
-                coordinator.onRateUpdate(platformName, rateName, updatedRate.getFields());
+            String tsStr = jsonNode.path("timestamp").asText();
+            long ts;
+            try {
+                ts = Instant.parse(tsStr).toEpochMilli();
+            } catch (Exception e) {
+                ts = System.currentTimeMillis(); // yedek çözüm
             }
+
+            log.trace("[{}] Fetched REST rate: {} = bid:{} ask:{} ts:{}", platformName, rateName, bid, ask, ts);
+
+
+            Rate rate = new Rate(
+                    rateName,
+                    new RateFields(bid, ask, ts),
+                    new RateStatus(true, false)
+            );
+
+            try {
+                int result = redisService.putRawRate(platformName,rateName,rate);
+
+                if (result == 0) {
+                    coordinator.onRateAvailable(platformName, rateName, rate);
+                } else if (result == 1) {
+                    coordinator.onRateUpdate(platformName, rateName, rate.getFields());
+                }
+            } catch (RedisException e) {
+                log.error("❌ [{}] Redis error while processing rate [{}]: {}", platformName, rateName, e.getMessage(), e);
+            }
+
         } catch (Exception e) {
-            logger.error("🌐 [{}] Failed to fetch/process REST data for [{}] → {}", platformName, rateName, e.getMessage(), e);
+            log.error("🌐 [{}] Failed to fetch/process REST data for [{}] → {}", platformName, rateName, e.getMessage(), e);
         }
     }
 
@@ -159,11 +175,11 @@ public class RESTProvider implements IProvider, AutoCloseable {
             this.apiKey = cfg.getString("apiKey");
             this.pollInterval = Duration.ofSeconds(cfg.optInt("pollInterval", 5));
 
-            logger.trace("REST config parsed: url={}, interval={}s", baseUrl, pollInterval.getSeconds());
+            log.trace("REST config parsed: url={}, interval={}s", baseUrl, pollInterval.getSeconds());
             return true;
 
         } catch (Exception e) {
-            logger.error("Config load failed from path [{}]: {}", CONFIG_FILE_PATH, e.getMessage(), e);
+            log.error("Config load failed from path [{}]: {}", CONFIG_FILE_PATH, e.getMessage(), e);
             return false;
         }
     }
@@ -172,16 +188,16 @@ public class RESTProvider implements IProvider, AutoCloseable {
     public void close() {
         scheduler.shutdownNow();
         connected.set(false);
-        logger.trace("Calling coordinator.onDisConnect() for: {}", platformName);
+        log.trace("Calling coordinator.onDisConnect() for: {}", platformName);
         safe(() -> coordinator.onDisConnect(platformName, false));
-        logger.info("RESTProvider shut down for platform: {}", platformName);
+        log.info("RESTProvider shut down for platform: {}", platformName);
     }
 
     private static void safe(Runnable r) {
         try {
             r.run();
         } catch (Exception e) {
-            logger.debug("safe-run error: {}", e.getMessage(), e);
+            log.debug("safe-run error: {}", e.getMessage(), e);
         }
     }
 }
