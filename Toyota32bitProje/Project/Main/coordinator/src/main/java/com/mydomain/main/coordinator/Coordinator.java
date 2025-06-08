@@ -210,16 +210,16 @@ public class Coordinator implements ICoordinator {
                 if (!result.isEmpty()) redisService.deactivateRawRates(activeRawRates);
 
                 // 4. Hesaplananları Redis'e yaz
-                for (Rate calculatedRate : result)
-                    redisService.putCalculatedRate(calculatedRate.getRateName(), calculatedRate);
+                for (Rate calculatedRate : result) redisService.putCalculatedRate(calculatedRate.getRateName(), calculatedRate);
 
-                // 5. Son hesaplananları Kafka'ya gönder
+                // 5. Calculated rate'leri al
                 List<Rate> lastCalculatedRates = redisService.getMostRecentAndActiveCalculatedRates();
+
+                // 6. Son hesaplananları Kafka'ya gönder
                 List<Rate> successfullySent = kafkaProducerService.sendRatesToKafka(lastCalculatedRates);
 
-                // 6. Kafka'ya gönderilenleri pasifleştir
+                // 7. Kafka'ya gönderilenleri pasifleştir
                 redisService.deactivateCalculatedRates(successfullySent);
-
             } catch (RedisException e) {
                 log.error("❌ Redis hatası (worker): {}", e.getMessage());
             } catch (CalculationException e) {
